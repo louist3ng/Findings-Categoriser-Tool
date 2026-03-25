@@ -143,13 +143,16 @@ class TestInferAppPackage:
     def test_infer_from_frequency(self):
         report = {
             "code_analysis": {
-                "rule1": {
-                    "files": [
-                        {"file_path": "com/mycompany/app/A.java"},
-                        {"file_path": "com/mycompany/app/B.java"},
-                        {"file_path": "com/mycompany/app/C.java"},
-                        {"file_path": "com/mycompany/app/sub/D.java"},
-                    ]
+                "findings": {
+                    "rule1": {
+                        "files": {
+                            "com/mycompany/app/A.java": "1",
+                            "com/mycompany/app/B.java": "2",
+                            "com/mycompany/app/C.java": "3",
+                            "com/mycompany/app/sub/D.java": "4",
+                        },
+                        "metadata": {}
+                    }
                 }
             }
         }
@@ -160,12 +163,15 @@ class TestInferAppPackage:
     def test_infer_excludes_android(self):
         report = {
             "code_analysis": {
-                "rule1": {
-                    "files": [
-                        {"file_path": "android/os/Build.java"},
-                        {"file_path": "android/os/Handler.java"},
-                        {"file_path": "com/myapp/test/Main.java"},
-                    ]
+                "findings": {
+                    "rule1": {
+                        "files": {
+                            "android/os/Build.java": "1",
+                            "android/os/Handler.java": "2",
+                            "com/myapp/test/Main.java": "3",
+                        },
+                        "metadata": {}
+                    }
                 }
             }
         }
@@ -185,15 +191,25 @@ class TestClassifyFindings:
         report = {
             "package_name": "com.example.myapp",
             "code_analysis": {
-                "hardcoded_key": {
-                    "severity": "high",
-                    "description": "Hardcoded encryption key",
-                    "files": [
-                        {"file_path": "com/example/myapp/CryptoHelper.java"},
-                        {"file_path": "com/google/firebase/FirebaseAuth.java"},
-                        {"file_path": "android/util/Base64.java"},
-                    ]
-                }
+                "findings": {
+                    "hardcoded_key": {
+                        "files": {
+                            "com/example/myapp/CryptoHelper.java": "10,20",
+                            "com/google/firebase/FirebaseAuth.java": "5",
+                            "android/util/Base64.java": "3",
+                        },
+                        "metadata": {
+                            "severity": "high",
+                            "cwe": "CWE-321",
+                            "cvss": 7.5,
+                            "description": "Hardcoded encryption key",
+                            "masvs": "",
+                            "owasp-mobile": "",
+                            "ref": "",
+                        }
+                    }
+                },
+                "summary": {"high": 1}
             }
         }
         tp_prefixes = ("com/google/",)

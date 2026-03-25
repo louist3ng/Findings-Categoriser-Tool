@@ -58,6 +58,11 @@ def main():
         print("Error: Failed to retrieve scan report.")
         sys.exit(1)
 
+    # Save raw MobSF report for debugging
+    raw_report_path = os.path.join(os.path.dirname(os.path.abspath(args.output)), "raw_mobsf_report.json")
+    save_json(report, raw_report_path)
+    print(f"Raw MobSF report saved to {raw_report_path}")
+
     # Step 4-5: Classify findings
     print("\nClassifying findings...")
     third_party_prefixes = load_third_party_prefixes(args.prefixes)

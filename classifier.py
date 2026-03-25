@@ -119,41 +119,22 @@ def classify_layer3(file_path, app_package, package_confidence):
 
 
 def _collect_file_paths(report):
-    """Extract all file paths from a MobSF report across all finding sections."""
+    """Extract all file paths from the code_analysis.findings section."""
     paths = set()
-    # MobSF stores findings in several sections
-    finding_sections = [
-        "code_analysis", "binary_analysis", "file_analysis",
-        "android_api", "niap_analysis",
-    ]
-    for section_key in finding_sections:
-        section = report.get(section_key, {})
-        if isinstance(section, dict):
-            for rule_name, rule_data in section.items():
-                files = _extract_files_from_rule(rule_data)
-                paths.update(files)
+    code_analysis = report.get("code_analysis", {})
+    if not isinstance(code_analysis, dict):
+        return paths
+    findings = code_analysis.get("findings", {})
+    if not isinstance(findings, dict):
+        return paths
+    for rule_id, rule_data in findings.items():
+        if not isinstance(rule_data, dict):
+            continue
+        files_dict = rule_data.get("files", {})
+        if isinstance(files_dict, dict):
+            for file_path in files_dict.keys():
+                paths.add(_normalize_path(file_path))
     return paths
-
-
-def _extract_files_from_rule(rule_data):
-    """Extract file paths from a single rule's data."""
-    files = set()
-    if isinstance(rule_data, dict):
-        # MobSF format: rule_data may have "files" as a list of dicts with "file_path"
-        # or as a list of strings, or "path" directly
-        for key in ("files", "path", "file_path"):
-            val = rule_data.get(key)
-            if isinstance(val, list):
-                for item in val:
-                    if isinstance(item, dict):
-                        fp = item.get("file_path") or item.get("path", "")
-                        if fp:
-                            files.add(_normalize_path(fp))
-                    elif isinstance(item, str) and item:
-                        files.add(_normalize_path(item))
-            elif isinstance(val, str) and val:
-                files.add(_normalize_path(val))
-    return files
 
 
 def _normalize_path(path):
@@ -170,10 +151,20 @@ def _normalize_path(path):
 
 
 def classify_findings(report, third_party_prefixes, verbose=False):
-    """Classify all findings from a MobSF report using Layers 1-3.
+    """Classify all findings from the code_analysis section of a MobSF report.
 
-    Returns a list of annotated findings (dicts), plus
-    a list of unclassified findings that need Layer 4.
+    Only processes code_analysis.findings — skips summary and other sections.
+
+    MobSF code_analysis structure:
+        code_analysis:
+          findings:
+            rule_id:
+              files: { "com/example/Foo.java": "12,34", ... }
+              metadata: { cvss, cwe, masvs, owasp-mobile, ref, description, severity, ... }
+          summary:
+            high: N, warning: N, ...
+
+    Returns (classified, unclassified) lists of annotated finding dicts.
     """
     classified = []
     unclassified = []
@@ -185,102 +176,102 @@ def classify_findings(report, third_party_prefixes, verbose=False):
     else:
         print("Warning: Could not infer app package name.")
 
-    # Iterate through all finding sections
-    finding_sections = ["code_analysis", "binary_analysis", "file_analysis",
-                        "android_api", "niap_analysis"]
+    # Only process code_analysis → findings
+    code_analysis = report.get("code_analysis", {})
+    if not isinstance(code_analysis, dict):
+        print("Warning: code_analysis section not found or invalid.")
+        return classified, unclassified
 
-    for section_key in finding_sections:
-        section = report.get(section_key, {})
-        if not isinstance(section, dict):
+    findings_dict = code_analysis.get("findings", {})
+    if not isinstance(findings_dict, dict):
+        print("Warning: code_analysis.findings not found or invalid.")
+        return classified, unclassified
+
+    for rule_id, rule_data in findings_dict.items():
+        if not isinstance(rule_data, dict):
             continue
-        for rule_name, rule_data in section.items():
-            if not isinstance(rule_data, dict):
-                continue
 
-            severity = rule_data.get("severity", rule_data.get("level", "info"))
-            description = rule_data.get("description", "")
-            file_entries = _get_file_entries(rule_data)
+        metadata = rule_data.get("metadata", {})
+        severity = metadata.get("severity", "info")
+        cwe = metadata.get("cwe", "")
+        cvss = metadata.get("cvss", "")
+        description = metadata.get("description", "")
+        masvs = metadata.get("masvs", "")
+        owasp = metadata.get("owasp-mobile", "")
+        ref = metadata.get("ref", "")
 
-            if not file_entries:
-                # Finding with no file paths — create single entry
-                finding = {
-                    "file_path": "",
-                    "vuln_name": rule_name,
-                    "severity": severity,
-                    "description": description,
-                    "section": section_key,
-                    "category": "unknown",
-                    "confidence": "low",
-                    "classified_by": "no_file_path",
-                    "llm_reason": "",
-                }
+        # MobSF files format: { "com/example/Foo.java": "12,34", ... }
+        files_dict = rule_data.get("files", {})
+        if not isinstance(files_dict, dict) or not files_dict:
+            # Finding with no file paths
+            finding = {
+                "file_path": "",
+                "line_numbers": "",
+                "vuln_name": rule_id,
+                "severity": severity,
+                "cwe": cwe,
+                "cvss": cvss,
+                "description": description,
+                "masvs": masvs,
+                "owasp_mobile": owasp,
+                "ref": ref,
+                "section": "code_analysis",
+                "category": "unknown",
+                "confidence": "low",
+                "classified_by": "no_file_path",
+                "llm_reason": "",
+            }
+            classified.append(finding)
+            continue
+
+        for file_path, line_numbers in files_dict.items():
+            norm_path = _normalize_path(file_path)
+            finding = {
+                "file_path": file_path,
+                "line_numbers": str(line_numbers) if line_numbers else "",
+                "vuln_name": rule_id,
+                "severity": severity,
+                "cwe": cwe,
+                "cvss": cvss,
+                "description": description,
+                "masvs": masvs,
+                "owasp_mobile": owasp,
+                "ref": ref,
+                "section": "code_analysis",
+                "llm_reason": "",
+            }
+
+            # Layer 1
+            result = classify_layer1(norm_path)
+            if result:
+                finding.update(result)
+                log_verbose(f"L1 android_code: {file_path}", verbose)
                 classified.append(finding)
                 continue
 
-            for file_path in file_entries:
-                norm_path = _normalize_path(file_path)
-                finding = {
-                    "file_path": file_path,
-                    "vuln_name": rule_name,
-                    "severity": severity,
-                    "description": description,
-                    "section": section_key,
-                    "llm_reason": "",
-                }
+            # Layer 2
+            result = classify_layer2(norm_path, third_party_prefixes)
+            if result:
+                finding.update(result)
+                log_verbose(f"L2 third_party: {file_path}", verbose)
+                classified.append(finding)
+                continue
 
-                # Layer 1
-                result = classify_layer1(norm_path)
-                if result:
-                    finding.update(result)
-                    log_verbose(f"L1 android_code: {file_path}", verbose)
-                    classified.append(finding)
-                    continue
+            # Layer 3
+            result = classify_layer3(norm_path, app_package, pkg_confidence)
+            if result:
+                finding.update(result)
+                log_verbose(f"L3 app_code: {file_path}", verbose)
+                classified.append(finding)
+                continue
 
-                # Layer 2
-                result = classify_layer2(norm_path, third_party_prefixes)
-                if result:
-                    finding.update(result)
-                    log_verbose(f"L2 third_party: {file_path}", verbose)
-                    classified.append(finding)
-                    continue
-
-                # Layer 3
-                result = classify_layer3(norm_path, app_package, pkg_confidence)
-                if result:
-                    finding.update(result)
-                    log_verbose(f"L3 app_code: {file_path}", verbose)
-                    classified.append(finding)
-                    continue
-
-                # Unclassified — needs Layer 4 or fallback
-                finding.update({
-                    "category": "unknown",
-                    "confidence": "low",
-                    "classified_by": "pending_layer4",
-                })
-                unclassified.append(finding)
-                log_verbose(f"Unclassified: {file_path}", verbose)
+            # Unclassified — needs Layer 4 or fallback
+            finding.update({
+                "category": "unknown",
+                "confidence": "low",
+                "classified_by": "pending_layer4",
+            })
+            unclassified.append(finding)
+            log_verbose(f"Unclassified: {file_path}", verbose)
 
     return classified, unclassified
-
-
-def _get_file_entries(rule_data):
-    """Extract a flat list of file path strings from rule data."""
-    files = []
-    if isinstance(rule_data, dict):
-        # Check common MobSF structures
-        file_list = rule_data.get("files", [])
-        if isinstance(file_list, list):
-            for item in file_list:
-                if isinstance(item, dict):
-                    fp = item.get("file_path") or item.get("path", "")
-                    if fp:
-                        files.append(fp)
-                elif isinstance(item, str) and item:
-                    files.append(item)
-        # Also check single path fields
-        for key in ("path", "file_path"):
-            val = rule_data.get(key)
-            if isinstance(val, str) and val and val not in files:
-                files.append(val)
-    return files

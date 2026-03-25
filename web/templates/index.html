@@ -235,12 +235,18 @@
                         <div class="detail-panel" id="panel-${i}">
                             <dl>
                                 <dt>Full Path</dt><dd>${esc(f.file_path || '—')}</dd>
+                                <dt>Line Numbers</dt><dd>${esc(f.line_numbers || '—')}</dd>
                                 <dt>Vulnerability</dt><dd>${esc(f.vuln_name)}</dd>
                                 <dt>Severity</dt><dd>${esc(f.severity)}</dd>
+                                <dt>CWE</dt><dd>${esc(f.cwe || '—')}</dd>
+                                <dt>CVSS</dt><dd>${esc(f.cvss || '—')}</dd>
+                                <dt>MASVS</dt><dd>${esc(f.masvs || '—')}</dd>
+                                <dt>OWASP Mobile</dt><dd>${esc(f.owasp_mobile || '—')}</dd>
                                 <dt>Category</dt><dd>${formatCat(f.category)}</dd>
                                 <dt>Confidence</dt><dd>${esc(f.confidence)}</dd>
                                 <dt>Classified By</dt><dd>${esc(f.classified_by)}</dd>
                                 <dt>Description</dt><dd>${esc(f.description || '—')}</dd>
+                                ${f.ref ? `<dt>Reference</dt><dd><a href="${esc(f.ref)}" target="_blank">${esc(f.ref)}</a></dd>` : ''}
                                 ${f.llm_reason ? `<dt>LLM Reason</dt><dd>${esc(f.llm_reason)}</dd>` : ''}
                             </dl>
                         </div>
@@ -282,9 +288,9 @@
 
         // Export CSV
         document.getElementById('exportCsvBtn').addEventListener('click', () => {
-            const header = 'file_path,vuln_name,severity,category,confidence,classified_by,llm_reason';
+            const header = 'file_path,line_numbers,vuln_name,severity,cwe,cvss,masvs,owasp_mobile,category,confidence,classified_by,llm_reason';
             const rows = allFindings.map(f =>
-                [f.file_path, f.vuln_name, f.severity, f.category, f.confidence, f.classified_by, f.llm_reason || '']
+                [f.file_path, f.line_numbers||'', f.vuln_name, f.severity, f.cwe||'', f.cvss||'', f.masvs||'', f.owasp_mobile||'', f.category, f.confidence, f.classified_by, f.llm_reason || '']
                     .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
             );
             download('classified_findings.csv', header + '\n' + rows.join('\n'), 'text/csv');
