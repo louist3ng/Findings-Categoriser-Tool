@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Findings Categoriser — Results</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --app-code: #3b82f6;
+            --third-party: #f59e0b;
+            --android-code: #10b981;
+            --unknown: #6b7280;
+            --severity-high: #ef4444;
+            --severity-medium: #f97316;
+            --severity-warning: #eab308;
+            --severity-info: #6b7280;
+            --severity-low: #9ca3af;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
+        .container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; margin-bottom: 4px; }
+        .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 24px; }
+
+        /* Header / Summary */
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+        .summary-card { background: #fff; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .summary-card .label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 4px; }
+        .summary-card .value { font-size: 1.25rem; font-weight: 600; }
+
+        /* Chart section */
+        .chart-section { display: flex; gap: 32px; margin-bottom: 40px; flex-wrap: wrap; }
+        .chart-container { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); flex: 0 0 380px; display: flex; align-items: center; justify-content: center; }
+        .chart-legend { flex: 1; min-width: 200px; }
+        .legend-item { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+        .legend-color { width: 14px; height: 14px; border-radius: 3px; margin-right: 10px; flex-shrink: 0; }
+        .legend-label { flex: 1; font-size: 0.9rem; }
+        .legend-count { font-weight: 600; margin-left: 8px; }
+        .legend-pct { color: #64748b; font-size: 0.85rem; margin-left: 6px; }
+
+        /* Export */
+        .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+        .btn { padding: 8px 18px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all .15s; }
+        .btn:hover { background: #f1f5f9; }
+        .btn-primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+        .btn-primary:hover { background: #2563eb; }
+        .filter-group { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+        .filter-group label { font-size: 0.8rem; color: #64748b; }
+        .filter-group select { padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.85rem; }
+
+        /* Table */
+        .findings-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .findings-table th { text-align: left; padding: 12px 16px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
+        .findings-table td { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; font-size: 0.88rem; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .findings-table tr.data-row { cursor: pointer; transition: background .1s; }
+        .findings-table tr.data-row:hover { background: #f8fafc; }
+        .findings-table tr.data-row.expanded { background: #eff6ff; }
+
+        .detail-row td { padding: 0; background: #f8fafc; }
+        .detail-panel { padding: 16px 24px; font-size: 0.85rem; display: none; }
+        .detail-panel.open { display: block; }
+        .detail-panel dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 16px; }
+        .detail-panel dt { font-weight: 600; color: #475569; }
+        .detail-panel dd { color: #334155; word-break: break-all; }
+
+        /* Badges */
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-high { background: #fef2f2; color: var(--severity-high); }
+        .badge-medium { background: #fff7ed; color: var(--severity-medium); }
+        .badge-warning { background: #fefce8; color: var(--severity-warning); }
+        .badge-info { background: #f8fafc; color: var(--severity-info); }
+        .badge-low, .badge-good, .badge-secure { background: #f8fafc; color: var(--severity-low); }
+
+        .cat-badge { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .cat-app_code { background: #eff6ff; color: var(--app-code); }
+        .cat-third_party { background: #fffbeb; color: var(--third-party); }
+        .cat-android_code { background: #ecfdf5; color: var(--android-code); }
+        .cat-unknown { background: #f8fafc; color: var(--unknown); }
+
+        .loading { text-align: center; padding: 60px; color: #64748b; }
+        .no-data { text-align: center; padding: 40px; color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Findings Categoriser</h1>
+        <p class="subtitle" id="subtitle">Loading results...</p>
+
+        <!-- Section 1: Summary -->
+        <div class="summary-grid" id="summary-grid"></div>
+
+        <!-- Section 2: Pie Chart -->
+        <div class="chart-section">
+            <div class="chart-container">
+                <canvas id="categoryChart" width="320" height="320"></canvas>
+            </div>
+            <div class="chart-legend" id="chart-legend"></div>
+        </div>
+
+        <!-- Section 4: Export + Filters -->
+        <div class="toolbar">
+            <button class="btn btn-primary" id="exportJsonBtn">Download JSON</button>
+            <button class="btn" id="exportCsvBtn">Download CSV</button>
+            <div class="filter-group">
+                <label>Category:</label>
+                <select id="filterCategory">
+                    <option value="all">All</option>
+                    <option value="app_code">App Code</option>
+                    <option value="third_party">Third Party</option>
+                    <option value="android_code">Android Code</option>
+                    <option value="unknown">Unknown</option>
+                </select>
+                <label>Severity:</label>
+                <select id="filterSeverity">
+                    <option value="all">All</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Section 3: Findings Table -->
+        <table class="findings-table" id="findingsTable">
+            <thead>
+                <tr>
+                    <th>File Path</th>
+                    <th>Vulnerability</th>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Confidence</th>
+                    <th>Classified By</th>
+                </tr>
+            </thead>
+            <tbody id="findingsBody">
+                <tr><td colspan="6" class="loading">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const COLORS = {
+            app_code: '#3b82f6',
+            third_party: '#f59e0b',
+            android_code: '#10b981',
+            unknown: '#6b7280',
+        };
+
+        let allFindings = [];
+        let metadata = {};
+
+        fetch('/api/data')
+            .then(r => r.json())
+            .then(data => {
+                metadata = data.metadata || {};
+                allFindings = data.findings || [];
+                renderSummary();
+                renderChart();
+                populateSeverityFilter();
+                renderTable(allFindings);
+            })
+            .catch(err => {
+                document.getElementById('findingsBody').innerHTML =
+                    '<tr><td colspan="6" class="no-data">Failed to load results.</td></tr>';
+            });
+
+        function renderSummary() {
+            const grid = document.getElementById('summary-grid');
+            const cards = [
+                { label: 'APK File', value: metadata.apk_filename || '—' },
+                { label: 'File Hash', value: metadata.file_hash ? metadata.file_hash.substring(0, 16) + '...' : '—' },
+                { label: 'Scan Date', value: metadata.scan_date || '—' },
+                { label: 'Total Findings', value: allFindings.length },
+                { label: 'LLM Fallback', value: metadata.llm_enabled ? 'Enabled' : 'Disabled' },
+            ];
+            grid.innerHTML = cards.map(c =>
+                `<div class="summary-card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`
+            ).join('');
+            document.getElementById('subtitle').textContent =
+                `${allFindings.length} findings classified from ${metadata.apk_filename || 'APK scan'}`;
+        }
+
+        function renderChart() {
+            const counts = { app_code: 0, third_party: 0, android_code: 0, unknown: 0 };
+            allFindings.forEach(f => { counts[f.category] = (counts[f.category] || 0) + 1; });
+            const labels = Object.keys(counts);
+            const values = Object.values(counts);
+            const total = values.reduce((a, b) => a + b, 0);
+            const colors = labels.map(l => COLORS[l] || '#6b7280');
+
+            new Chart(document.getElementById('categoryChart'), {
+                type: 'pie',
+                data: { labels: labels.map(formatCat), datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+                options: { responsive: false, plugins: { legend: { display: false } } }
+            });
+
+            const legendEl = document.getElementById('chart-legend');
+            legendEl.innerHTML = '<h3 style="margin-bottom:12px;">Category Breakdown</h3>' +
+                labels.map((l, i) => {
+                    const pct = total ? ((values[i] / total) * 100).toFixed(1) : 0;
+                    return `<div class="legend-item">
+                        <span class="legend-color" style="background:${colors[i]}"></span>
+                        <span class="legend-label">${formatCat(l)}</span>
+                        <span class="legend-count">${values[i]}</span>
+                        <span class="legend-pct">(${pct}%)</span>
+                    </div>`;
+                }).join('');
+        }
+
+        function populateSeverityFilter() {
+            const sevs = [...new Set(allFindings.map(f => f.severity))].sort();
+            const sel = document.getElementById('filterSeverity');
+            sevs.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s; opt.textContent = s;
+                sel.appendChild(opt);
+            });
+        }
+
+        function renderTable(findings) {
+            const tbody = document.getElementById('findingsBody');
+            if (!findings.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="no-data">No findings match filters.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = findings.map((f, i) => `
+                <tr class="data-row" data-idx="${i}" onclick="toggleDetail(${i})">
+                    <td title="${esc(f.file_path)}">${esc(truncPath(f.file_path))}</td>
+                    <td title="${esc(f.vuln_name)}">${esc(f.vuln_name)}</td>
+                    <td><span class="badge badge-${f.severity.toLowerCase()}">${esc(f.severity)}</span></td>
+                    <td><span class="cat-badge cat-${f.category}">${formatCat(f.category)}</span></td>
+                    <td>${esc(f.confidence)}</td>
+                    <td>${esc(f.classified_by)}</td>
+                </tr>
+                <tr class="detail-row" id="detail-${i}">
+                    <td colspan="6">
+                        <div class="detail-panel" id="panel-${i}">
+                            <dl>
+                                <dt>Full Path</dt><dd>${esc(f.file_path || '—')}</dd>
+                                <dt>Vulnerability</dt><dd>${esc(f.vuln_name)}</dd>
+                                <dt>Severity</dt><dd>${esc(f.severity)}</dd>
+                                <dt>Category</dt><dd>${formatCat(f.category)}</dd>
+                                <dt>Confidence</dt><dd>${esc(f.confidence)}</dd>
+                                <dt>Classified By</dt><dd>${esc(f.classified_by)}</dd>
+                                <dt>Description</dt><dd>${esc(f.description || '—')}</dd>
+                                ${f.llm_reason ? `<dt>LLM Reason</dt><dd>${esc(f.llm_reason)}</dd>` : ''}
+                            </dl>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function toggleDetail(idx) {
+            const panel = document.getElementById('panel-' + idx);
+            const row = document.querySelector(`tr.data-row[data-idx="${idx}"]`);
+            const isOpen = panel.classList.contains('open');
+            // Close all
+            document.querySelectorAll('.detail-panel.open').forEach(p => p.classList.remove('open'));
+            document.querySelectorAll('tr.data-row.expanded').forEach(r => r.classList.remove('expanded'));
+            if (!isOpen) {
+                panel.classList.add('open');
+                row.classList.add('expanded');
+            }
+        }
+
+        // Filters
+        document.getElementById('filterCategory').addEventListener('change', applyFilters);
+        document.getElementById('filterSeverity').addEventListener('change', applyFilters);
+
+        function applyFilters() {
+            const cat = document.getElementById('filterCategory').value;
+            const sev = document.getElementById('filterSeverity').value;
+            let filtered = allFindings;
+            if (cat !== 'all') filtered = filtered.filter(f => f.category === cat);
+            if (sev !== 'all') filtered = filtered.filter(f => f.severity === sev);
+            renderTable(filtered);
+        }
+
+        // Export JSON
+        document.getElementById('exportJsonBtn').addEventListener('click', () => {
+            download('classified_findings.json', JSON.stringify({ metadata, findings: allFindings }, null, 2), 'application/json');
+        });
+
+        // Export CSV
+        document.getElementById('exportCsvBtn').addEventListener('click', () => {
+            const header = 'file_path,vuln_name,severity,category,confidence,classified_by,llm_reason';
+            const rows = allFindings.map(f =>
+                [f.file_path, f.vuln_name, f.severity, f.category, f.confidence, f.classified_by, f.llm_reason || '']
+                    .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
+            );
+            download('classified_findings.csv', header + '\n' + rows.join('\n'), 'text/csv');
+        });
+
+        function download(filename, content, mime) {
+            const blob = new Blob([content], { type: mime });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function formatCat(c) {
+            return { app_code: 'App Code', third_party: 'Third Party', android_code: 'Android Code', unknown: 'Unknown' }[c] || c;
+        }
+        function truncPath(p) { return p && p.length > 50 ? '...' + p.slice(-47) : (p || '—'); }
+        function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    </script>
+</body>
+</html>

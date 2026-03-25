@@ -1,0 +1,22 @@
+prefixes:
+  - com/google/
+  - com/facebook/
+  - com/squareup/
+  - okhttp3/
+  - retrofit2/
+  - io/reactivex/
+  - com/amazonaws/
+  - io/flutter/
+  - com/crashlytics/
+  - com/newrelic/
+  - com/appsflyer/
+  - com/adjust/
+  - org/apache/
+  - com/jakewharton/
+  - io/sentry/
+  - com/datadog/
+  - com/mixpanel/
+  - com/segment/
+  - com/braze/
+  - com/onesignal/
+  - com/zendesk/

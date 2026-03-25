@@ -1,0 +1,90 @@
+"""Layer 4 — LLM fallback for ambiguous/obfuscated file paths (optional)."""
+
+import json
+from utils import log_verbose
+
+
+def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
+    """Attempt to classify unclassified findings using Claude API.
+
+    If anthropic_api_key is None or empty, marks all as skipped.
+    Returns the findings list with updated classification fields.
+    """
+    if not anthropic_api_key:
+        for finding in unclassified_findings:
+            finding["category"] = "unknown"
+            finding["confidence"] = "low"
+            finding["classified_by"] = "skipped_no_api_key"
+        return unclassified_findings
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=anthropic_api_key)
+    except Exception as e:
+        print(f"Warning: Failed to initialize Anthropic client: {e}")
+        for finding in unclassified_findings:
+            finding["category"] = "unknown"
+            finding["confidence"] = "low"
+            finding["classified_by"] = "llm_error"
+        return unclassified_findings
+
+    total = len(unclassified_findings)
+    for i, finding in enumerate(unclassified_findings):
+        file_path = finding.get("file_path", "")
+        if not file_path:
+            finding["category"] = "unknown"
+            finding["confidence"] = "low"
+            finding["classified_by"] = "no_file_path"
+            continue
+
+        log_verbose(f"LLM classifying ({i+1}/{total}): {file_path}", verbose)
+
+        try:
+            result = _call_llm(client, file_path)
+            finding["category"] = result.get("category", "unknown")
+            finding["confidence"] = result.get("confidence", "low")
+            finding["classified_by"] = "llm_fallback"
+            finding["llm_reason"] = result.get("reason", "")
+            log_verbose(f"  -> {finding['category']} ({finding['confidence']})", verbose)
+        except Exception as e:
+            log_verbose(f"  LLM error: {e}", verbose)
+            finding["category"] = "unknown"
+            finding["confidence"] = "low"
+            finding["classified_by"] = "llm_error"
+
+    return unclassified_findings
+
+
+def _call_llm(client, file_path):
+    """Call Claude API to classify a single file path."""
+    prompt = (
+        f"You are an Android APK analysis expert. Given this file path from a decompiled "
+        f"Android APK: '{file_path}', classify it as one of: app_code, third_party, "
+        f"android_code. Reply in JSON only:\n"
+        f'{{"category": "...", "confidence": "high|medium|low", "reason": "..."}}'
+    )
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=256,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text = response.content[0].text.strip()
+    # Parse JSON from the response — handle cases where it's wrapped in markdown
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1])
+
+    result = json.loads(text)
+
+    # Validate category
+    valid_categories = {"app_code", "third_party", "android_code"}
+    if result.get("category") not in valid_categories:
+        result["category"] = "unknown"
+
+    valid_confidence = {"high", "medium", "low"}
+    if result.get("confidence") not in valid_confidence:
+        result["confidence"] = "low"
+
+    return result
