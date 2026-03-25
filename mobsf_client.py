@@ -56,21 +56,31 @@ class MobSFClient:
         print(f"Upload successful. File hash: {file_hash}")
         return file_hash
 
-    def scan(self, file_hash):
-        """Trigger a SAST scan on the uploaded APK."""
-        print("Triggering MobSF scan...")
-        resp = requests.post(
-            f"{self.base_url}/api/v1/scan",
-            headers=self.headers,
-            data={"hash": file_hash},
-            timeout=30,
-        )
+    def scan(self, file_hash, timeout=600):
+        """Trigger a SAST scan on the uploaded APK.
+
+        The MobSF /api/v1/scan endpoint is synchronous — it blocks until
+        the scan is finished, so the HTTP timeout must be at least as long
+        as the expected scan duration.
+        """
+        print("Triggering MobSF scan (this may take several minutes)...")
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/v1/scan",
+                headers=self.headers,
+                data={"hash": file_hash},
+                timeout=timeout,
+            )
+        except requests.exceptions.ReadTimeout:
+            print(f"Warning: Scan request timed out after {timeout}s. "
+                  "Attempting to retrieve partial results...")
+            return
 
         if resp.status_code != 200:
             print(f"Error: Scan trigger failed (HTTP {resp.status_code}): {resp.text}")
             raise SystemExit(1)
 
-        print("Scan triggered successfully.")
+        print("Scan completed successfully.")
 
     def poll_for_report(self, file_hash, timeout=600, poll_interval=5):
         """Poll MobSF for the scan report until it's ready or timeout.

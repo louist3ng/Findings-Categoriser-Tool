@@ -50,9 +50,9 @@ def main():
     client = MobSFClient(config["mobsf_url"], config["mobsf_api_key"])
     file_hash = client.upload(args.apk)
 
-    # Step 3: Trigger scan and poll
-    client.scan(file_hash)
-    report = client.poll_for_report(file_hash, timeout=args.timeout)
+    # Step 3: Trigger scan (synchronous — blocks until done) then fetch report
+    client.scan(file_hash, timeout=args.timeout)
+    report = client.get_report(file_hash)
 
     if not report:
         print("Error: Failed to retrieve scan report.")
