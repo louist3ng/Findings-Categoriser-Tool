@@ -1,4 +1,4 @@
-"""Tests for Layer 4 LLM fallback — graceful skip when no API key."""
+"""Tests for Layer 6 LLM fallback — graceful skip when no API key."""
 
 import sys
 import os
@@ -15,9 +15,11 @@ class TestLLMFallbackSkipped:
                 "file_path": "a/b/c/Obfuscated.java",
                 "vuln_name": "test_rule",
                 "severity": "high",
+                "cwe": "CWE-321",
+                "description": "Hardcoded key",
                 "category": "unknown",
                 "confidence": "low",
-                "classified_by": "pending_layer4",
+                "classified_by": "pending_llm",
                 "llm_reason": "",
             }
         ]
@@ -33,9 +35,11 @@ class TestLLMFallbackSkipped:
                 "file_path": "x/y/Z.java",
                 "vuln_name": "rule",
                 "severity": "medium",
+                "cwe": "",
+                "description": "",
                 "category": "unknown",
                 "confidence": "low",
-                "classified_by": "pending_layer4",
+                "classified_by": "pending_llm",
                 "llm_reason": "",
             }
         ]
@@ -45,7 +49,8 @@ class TestLLMFallbackSkipped:
     def test_multiple_findings_all_skipped(self):
         findings = [
             {"file_path": f"path/{i}.java", "vuln_name": "r", "severity": "low",
-             "category": "unknown", "confidence": "low", "classified_by": "pending_layer4", "llm_reason": ""}
+             "cwe": "", "description": "",
+             "category": "unknown", "confidence": "low", "classified_by": "pending_llm", "llm_reason": ""}
             for i in range(5)
         ]
         result = classify_with_llm(findings, None)

@@ -11,6 +11,7 @@
             --third-party: #f59e0b;
             --android-code: #10b981;
             --unknown: #6b7280;
+            --obfuscated-unknown: #8b5cf6;
             --severity-high: #ef4444;
             --severity-medium: #f97316;
             --severity-warning: #eab308;
@@ -77,6 +78,7 @@
         .cat-third_party { background: #fffbeb; color: var(--third-party); }
         .cat-android_code { background: #ecfdf5; color: var(--android-code); }
         .cat-unknown { background: #f8fafc; color: var(--unknown); }
+        .cat-obfuscated_unknown { background: #f5f3ff; color: var(--obfuscated-unknown); }
 
         .loading { text-align: center; padding: 60px; color: #64748b; }
         .no-data { text-align: center; padding: 40px; color: #94a3b8; }
@@ -110,6 +112,7 @@
                     <option value="third_party">Third Party</option>
                     <option value="android_code">Android Code</option>
                     <option value="unknown">Unknown</option>
+                    <option value="obfuscated_unknown">Obfuscated</option>
                 </select>
                 <label>Severity:</label>
                 <select id="filterSeverity">
@@ -142,6 +145,7 @@
             third_party: '#f59e0b',
             android_code: '#10b981',
             unknown: '#6b7280',
+            obfuscated_unknown: '#8b5cf6',
         };
 
         let allFindings = [];
@@ -179,7 +183,7 @@
         }
 
         function renderChart() {
-            const counts = { app_code: 0, third_party: 0, android_code: 0, unknown: 0 };
+            const counts = { app_code: 0, third_party: 0, android_code: 0, unknown: 0, obfuscated_unknown: 0 };
             allFindings.forEach(f => { counts[f.category] = (counts[f.category] || 0) + 1; });
             const labels = Object.keys(counts);
             const values = Object.values(counts);
@@ -306,7 +310,7 @@
         }
 
         function formatCat(c) {
-            return { app_code: 'App Code', third_party: 'Third Party', android_code: 'Android Code', unknown: 'Unknown' }[c] || c;
+            return { app_code: 'App Code', third_party: 'Third Party', android_code: 'Android Code', unknown: 'Unknown', obfuscated_unknown: 'Obfuscated' }[c] || c;
         }
         function truncPath(p) { return p && p.length > 50 ? '...' + p.slice(-47) : (p || '—'); }
         function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }

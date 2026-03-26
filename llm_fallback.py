@@ -1,6 +1,7 @@
-"""Layer 4 — LLM fallback for ambiguous/obfuscated file paths (optional)."""
+"""Layer 6 — LLM fallback for ambiguous/obfuscated file paths (optional)."""
 
 import json
+from classifier import is_obfuscated_path, _normalize_path
 from utils import log_verbose
 
 
@@ -40,7 +41,15 @@ def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
         log_verbose(f"LLM classifying ({i+1}/{total}): {file_path}", verbose)
 
         try:
-            result = _call_llm(client, file_path)
+            norm_path = _normalize_path(file_path)
+            result = _call_llm(
+                client,
+                file_path,
+                severity=finding.get("severity", ""),
+                cwe=finding.get("cwe", ""),
+                description=finding.get("description", ""),
+                is_obfuscated=is_obfuscated_path(norm_path),
+            )
             finding["category"] = result.get("category", "unknown")
             finding["confidence"] = result.get("confidence", "low")
             finding["classified_by"] = "llm_fallback"
@@ -55,12 +64,21 @@ def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
     return unclassified_findings
 
 
-def _call_llm(client, file_path):
-    """Call Claude API to classify a single file path."""
+def _call_llm(client, file_path, severity="", cwe="", description="",
+              is_obfuscated=False):
+    """Call Claude API to classify a single file path with full vulnerability context."""
     prompt = (
-        f"You are an Android APK analysis expert. Given this file path from a decompiled "
-        f"Android APK: '{file_path}', classify it as one of: app_code, third_party, "
-        f"android_code. Reply in JSON only:\n"
+        f"You are an Android APK analysis expert. Classify the following finding "
+        f"from a decompiled Android APK.\n\n"
+        f"File path: '{file_path}'\n"
+        f"Severity: {severity}\n"
+        f"CWE: {cwe}\n"
+        f"Description: {description}\n"
+        f"Path appears obfuscated: {is_obfuscated}\n\n"
+        f"Classify as one of: app_code, third_party, android_code, obfuscated_unknown.\n"
+        f"If the path is obfuscated, consider whether this vulnerability type "
+        f"typically appears in app code vs library code based on the CWE and description.\n"
+        f'Reply in JSON only:\n'
         f'{{"category": "...", "confidence": "high|medium|low", "reason": "..."}}'
     )
 
@@ -79,7 +97,7 @@ def _call_llm(client, file_path):
     result = json.loads(text)
 
     # Validate category
-    valid_categories = {"app_code", "third_party", "android_code"}
+    valid_categories = {"app_code", "third_party", "android_code", "obfuscated_unknown"}
     if result.get("category") not in valid_categories:
         result["category"] = "unknown"
 

@@ -1,4 +1,4 @@
-"""Tests for the classification engine (Layers 1-3)."""
+"""Tests for the classification engine (Layers 1-5)."""
 
 import pytest
 import sys
@@ -13,6 +13,10 @@ from classifier import (
     infer_app_package,
     classify_findings,
     load_third_party_prefixes,
+    is_obfuscated_path,
+    classify_obfuscated,
+    extract_manifest_components,
+    classify_manifest_component,
 )
 
 
@@ -98,7 +102,85 @@ class TestLayer2:
         assert result["category"] == "third_party"
 
 
-# --- Layer 3: Package inference ---
+# --- Layer 3: Manifest component matching ---
+
+class TestManifestComponents:
+    def test_extract_activities(self):
+        report = {
+            "activities": [
+                "com.example.myapp.MainActivity",
+                "com.example.myapp.SettingsActivity",
+            ],
+            "services": ["com.example.myapp.SyncService"],
+            "receivers": [],
+            "providers": [],
+        }
+        paths, prefixes = extract_manifest_components(report)
+        assert "com/example/myapp/MainActivity" in paths
+        assert "com/example/myapp/SettingsActivity" in paths
+        assert "com/example/myapp/SyncService" in paths
+        assert "com/example/myapp/" in prefixes
+
+    def test_filters_android_components(self):
+        report = {
+            "activities": ["android.app.Activity"],
+            "services": [],
+            "receivers": [],
+            "providers": [],
+        }
+        paths, prefixes = extract_manifest_components(report)
+        assert len(paths) == 0
+
+    def test_filters_third_party_components(self):
+        report = {
+            "activities": [],
+            "services": [],
+            "receivers": [],
+            "providers": ["com.google.firebase.provider.FirebaseInitProvider"],
+        }
+        paths, prefixes = extract_manifest_components(report, ("com/google/",))
+        assert len(paths) == 0
+
+    def test_classify_exact_component_match(self):
+        manifest_paths = {"com/example/myapp/MainActivity"}
+        manifest_prefixes = {"com/example/myapp/"}
+        result = classify_manifest_component(
+            "com/example/myapp/MainActivity.java",
+            manifest_paths, manifest_prefixes
+        )
+        assert result is not None
+        assert result["category"] == "app_code"
+        assert result["confidence"] == "high"
+        assert result["classified_by"] == "manifest_component"
+
+    def test_classify_package_match(self):
+        manifest_paths = {"com/example/myapp/MainActivity"}
+        manifest_prefixes = {"com/example/myapp/"}
+        result = classify_manifest_component(
+            "com/example/myapp/utils/Helper.java",
+            manifest_paths, manifest_prefixes
+        )
+        assert result is not None
+        assert result["category"] == "app_code"
+        assert result["confidence"] == "medium"
+        assert result["classified_by"] == "manifest_package"
+
+    def test_no_match(self):
+        manifest_paths = {"com/example/myapp/MainActivity"}
+        manifest_prefixes = {"com/example/myapp/"}
+        result = classify_manifest_component(
+            "com/other/lib/Foo.java",
+            manifest_paths, manifest_prefixes
+        )
+        assert result is None
+
+    def test_empty_manifest(self):
+        paths, prefixes = extract_manifest_components({})
+        assert len(paths) == 0
+        assert len(prefixes) == 0
+
+
+# --- Layer 4: Package inference ---
 
 class TestLayer3:
     def test_classify_with_inferred_package(self):
@@ -183,6 +265,83 @@ class TestInferAppPackage:
         pkg, conf = infer_app_package({}, ())
         assert pkg is None
 
+    def test_infer_skips_obfuscated_paths(self):
+        """Obfuscated paths (a/b/c.java) should not influence package inference.
+
+        This ensures -keep survivors (real-named classes) dominate the frequency
+        count even when obfuscated classes outnumber them.
+        """
+        report = {
+            "code_analysis": {
+                "findings": {
+                    "rule1": {
+                        "files": {
+                            # Obfuscated paths (should be skipped)
+                            "a/b/c.java": "1",
+                            "a/b/d.java": "2",
+                            "a/b/e.java": "3",
+                            "a/c/f.java": "4",
+                            "b/c/g.java": "5",
+                            "b/c/h.java": "6",
+                            # Real-named -keep survivors
+                            "com/myapp/real/Keep1.java": "7",
+                            "com/myapp/real/Keep2.java": "8",
+                        },
+                        "metadata": {}
+                    }
+                }
+            }
+        }
+        pkg, conf = infer_app_package(report, ())
+        assert pkg == "com/myapp/real/"
+
+
+# --- Layer 5: Obfuscation heuristic ---
+
+class TestIsObfuscatedPath:
+    def test_classic_obfuscated(self):
+        assert is_obfuscated_path("a/b/c.java") is True
+
+    def test_deeper_obfuscated(self):
+        assert is_obfuscated_path("x/y/z/Foo.java") is True
+
+    def test_mixed_case_obfuscated(self):
+        assert is_obfuscated_path("a/b/C.java") is True
+
+    def test_real_package_not_obfuscated(self):
+        assert is_obfuscated_path("com/example/myapp/Main.java") is False
+
+    def test_io_reactivex_not_obfuscated(self):
+        """Packages like io/reactivex/ have multi-char segments."""
+        assert is_obfuscated_path("io/reactivex/Observable.java") is False
+
+    def test_too_few_segments(self):
+        """Paths with fewer than 3 segments are not flagged."""
+        assert is_obfuscated_path("a/B.java") is False
+
+    def test_single_file_no_dirs(self):
+        assert is_obfuscated_path("Main.java") is False
+
+    def test_one_real_dir_segment(self):
+        """If any directory segment is multi-char, it's not obfuscated."""
+        assert is_obfuscated_path("com/a/B.java") is False
+
+    def test_single_letter_with_long_filename(self):
+        assert is_obfuscated_path("a/b/SomeClass.java") is True
+
+
+class TestClassifyObfuscated:
+    def test_obfuscated_path_classified(self):
+        result = classify_obfuscated("a/b/c.java")
+        assert result is not None
+        assert result["category"] == "obfuscated_unknown"
+        assert result["confidence"] == "medium"
+        assert result["classified_by"] == "obfuscation_heuristic"
+
+    def test_real_path_not_classified(self):
+        result = classify_obfuscated("com/example/Main.java")
+        assert result is None
+
 
 # --- Integration: classify_findings ---
 
@@ -220,3 +379,63 @@ class TestClassifyFindings:
         assert categories["com/google/firebase/FirebaseAuth.java"] == "third_party"
         assert categories["android/util/Base64.java"] == "android_code"
         assert len(unclassified) == 0
+
+    def test_obfuscated_path_classified_as_obfuscated(self):
+        """Obfuscated paths should be tagged as obfuscated_unknown, not left unclassified."""
+        report = {
+            "code_analysis": {
+                "findings": {
+                    "some_vuln": {
+                        "files": {
+                            "a/b/c.java": "1",
+                        },
+                        "metadata": {
+                            "severity": "warning",
+                            "cwe": "",
+                            "cvss": 0,
+                            "description": "Test",
+                            "masvs": "",
+                            "owasp-mobile": "",
+                            "ref": "",
+                        }
+                    }
+                }
+            }
+        }
+        classified, unclassified = classify_findings(report, ())
+        assert len(unclassified) == 0
+        assert any(f["category"] == "obfuscated_unknown" for f in classified)
+        obf = [f for f in classified if f["file_path"] == "a/b/c.java"][0]
+        assert obf["classified_by"] == "obfuscation_heuristic"
+
+    def test_manifest_component_classification(self):
+        """Manifest-declared components should be classified as app_code even
+        if they don't match the inferred package prefix."""
+        report = {
+            "activities": ["com.example.myapp.MainActivity"],
+            "services": [],
+            "receivers": [],
+            "providers": [],
+            "code_analysis": {
+                "findings": {
+                    "vuln": {
+                        "files": {
+                            "com/example/myapp/MainActivity.java": "5",
+                        },
+                        "metadata": {
+                            "severity": "info",
+                            "cwe": "",
+                            "cvss": 0,
+                            "description": "Test",
+                            "masvs": "",
+                            "owasp-mobile": "",
+                            "ref": "",
+                        }
+                    }
+                }
+            }
+        }
+        classified, unclassified = classify_findings(report, ())
+        assert len(classified) == 1
+        assert classified[0]["category"] == "app_code"
+        assert classified[0]["classified_by"] in ("manifest_component", "manifest_package")

@@ -93,12 +93,14 @@ python cli.py --apk path/to/app.apk --verbose
 
 ## Classification Layers
 
-Findings are classified using a waterfall of four layers:
+Findings are classified using a waterfall of six layers, designed to handle both debug and R8/ProGuard-obfuscated APKs:
 
-1. **Layer 1 — Android Code** (rule-based): Matches known Android/platform prefixes (`android/`, `java/`, `javax/`, etc.)
-2. **Layer 2 — Third-party Code** (whitelist): Matches known library prefixes (`com/google/`, `okhttp3/`, etc.)
-3. **Layer 3 — App Code** (inferred): Infers the app's package name from the manifest or file path frequency analysis
-4. **Layer 4 — LLM Fallback** (optional): Uses Claude API for ambiguous/obfuscated paths
+1. **Layer 1 — Android Code** (rule-based): Matches known Android/platform prefixes (`android/`, `java/`, `javax/`, etc.). These survive obfuscation.
+2. **Layer 2 — Third-party Code** (whitelist): Matches known library prefixes (`com/google/`, `okhttp3/`, etc.) from `third_party_prefixes.yaml`.
+3. **Layer 3 — Manifest Components** (manifest cross-reference): Activities, services, receivers, and providers declared in AndroidManifest.xml retain their real class names after R8. Files matching these components or their parent packages are classified as app code.
+4. **Layer 4 — App Code** (inferred): Infers the app's package name from the manifest or file path frequency analysis. Obfuscated paths (single-letter segments) are excluded from frequency counting so that `-keep` survivors dominate the inference.
+5. **Layer 5 — Obfuscation Heuristic**: Paths where all directory segments are single characters (e.g. `a/b/c.java`) are tagged as `obfuscated_unknown` rather than left as generic unknowns.
+6. **Layer 6 — LLM Fallback** (optional): Uses Claude API with full vulnerability context (severity, CWE, description, obfuscation status) to classify remaining ambiguous paths.
 
 Each layer assigns a `category`, `confidence` level, and records which layer made the decision.
 

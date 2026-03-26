@@ -1,6 +1,7 @@
-"""Classification engine — Layers 1, 2, 3 (rule-based, whitelist, package inference)."""
+"""Classification engine — Layers 1-5 (rule-based, whitelist, manifest, package inference, obfuscation detection)."""
 
 import os
+import re
 import yaml
 from collections import Counter
 from utils import log_verbose
@@ -20,6 +21,9 @@ ANDROID_PREFIXES = (
     "org/w3c/",
 )
 
+# Regex for obfuscated paths: all directory segments are single characters
+_OBFUSCATED_RE = re.compile(r"^(?:[a-zA-Z]/)+[a-zA-Z0-9]+\.\w+$")
+
 
 def load_third_party_prefixes(config_path=None):
     """Load third-party prefixes from a YAML config file."""
@@ -33,6 +37,20 @@ def load_third_party_prefixes(config_path=None):
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return tuple(data.get("prefixes", []))
+
+
+def is_obfuscated_path(file_path):
+    """Detect R8/ProGuard-obfuscated paths where all directory segments are single characters.
+
+    Examples: a/b/c.java, a/b/C.java, x/y/z/Foo.java
+    Non-obfuscated: com/example/myapp/Main.java, io/reactivex/Observable.java
+    """
+    parts = file_path.split("/")
+    if len(parts) < 3:
+        return False
+    # Check directory segments only (exclude filename)
+    dir_segments = parts[:-1]
+    return all(len(seg) == 1 for seg in dir_segments)
 
 
 def classify_layer1(file_path):
@@ -59,12 +77,101 @@ def classify_layer2(file_path, third_party_prefixes):
     return None
 
 
+def extract_manifest_components(report, third_party_prefixes=()):
+    """Extract app component paths and package prefixes from AndroidManifest data.
+
+    MobSF reports include activities, services, receivers, providers as lists
+    of fully-qualified class names (e.g. "com.example.myapp.MainActivity").
+    These survive R8 obfuscation because they are declared in the manifest.
+
+    Returns (component_paths: set, package_prefixes: set) where:
+      - component_paths: slash-notation class paths (e.g. "com/example/myapp/MainActivity")
+      - package_prefixes: unique parent packages (e.g. "com/example/myapp/")
+    """
+    component_paths = set()
+    package_prefixes = set()
+
+    manifest_keys = ("activities", "services", "receivers", "providers",
+                     "exported_activities")
+    for key in manifest_keys:
+        items = report.get(key, [])
+        if not isinstance(items, list):
+            continue
+        for class_name in items:
+            if not isinstance(class_name, str) or not class_name:
+                continue
+            # Convert dot-notation to slash-notation
+            slash_path = class_name.replace(".", "/")
+
+            # Skip platform/third-party components
+            if any(slash_path.startswith(p) for p in ANDROID_PREFIXES):
+                continue
+            if any(slash_path.startswith(p) for p in third_party_prefixes):
+                continue
+
+            component_paths.add(slash_path)
+            # Extract parent package prefix
+            last_slash = slash_path.rfind("/")
+            if last_slash > 0:
+                package_prefixes.add(slash_path[:last_slash + 1])
+
+    return component_paths, package_prefixes
+
+
+def classify_manifest_component(file_path, manifest_paths, manifest_prefixes):
+    """Layer 3: App code detection via manifest-declared components.
+
+    Components declared in AndroidManifest.xml keep their real names even
+    after R8 obfuscation, making this a reliable signal for app code.
+    """
+    # Strip file extension for exact component match
+    path_no_ext = file_path
+    for ext in (".java", ".smali", ".kt"):
+        if file_path.endswith(ext):
+            path_no_ext = file_path[:-len(ext)]
+            break
+
+    if path_no_ext in manifest_paths:
+        return {
+            "category": "app_code",
+            "confidence": "high",
+            "classified_by": "manifest_component",
+        }
+
+    # Check if file is under a manifest-derived package
+    for prefix in manifest_prefixes:
+        if file_path.startswith(prefix):
+            return {
+                "category": "app_code",
+                "confidence": "medium",
+                "classified_by": "manifest_package",
+            }
+
+    return None
+
+
+def classify_obfuscated(file_path):
+    """Layer 5: Detect R8/ProGuard-obfuscated paths.
+
+    Paths where all directory segments are single characters (e.g. a/b/c.java)
+    are tagged as obfuscated rather than left as generic 'unknown'.
+    """
+    if is_obfuscated_path(file_path):
+        return {
+            "category": "obfuscated_unknown",
+            "confidence": "medium",
+            "classified_by": "obfuscation_heuristic",
+        }
+    return None
+
+
 def infer_app_package(report, third_party_prefixes):
     """Infer the app's root package from the MobSF report.
 
     Strategy:
     1. Try to extract package name from AndroidManifest.xml data in the report.
-    2. Fall back to frequency analysis of file paths.
+    2. Fall back to frequency analysis of file paths (skipping obfuscated paths
+       so that -keep survivors dominate the count).
 
     Returns (package_prefix, confidence) where confidence is "high" or "medium".
     """
@@ -82,6 +189,10 @@ def infer_app_package(report, third_party_prefixes):
     # Collect top-level package segments (first 2-3 segments like com/example/app)
     package_counts = Counter()
     for path in all_paths:
+        # Skip obfuscated paths — only real-named classes contribute
+        if is_obfuscated_path(path):
+            continue
+
         parts = path.split("/")
         if len(parts) < 3:
             continue
@@ -108,7 +219,7 @@ def infer_app_package(report, third_party_prefixes):
 
 
 def classify_layer3(file_path, app_package, package_confidence):
-    """Layer 3: App code detection via inferred package name."""
+    """Layer 4: App code detection via inferred package name."""
     if app_package and file_path.startswith(app_package):
         return {
             "category": "app_code",
@@ -155,21 +266,27 @@ def classify_findings(report, third_party_prefixes, verbose=False):
 
     Only processes code_analysis.findings — skips summary and other sections.
 
-    MobSF code_analysis structure:
-        code_analysis:
-          findings:
-            rule_id:
-              files: { "com/example/Foo.java": "12,34", ... }
-              metadata: { cvss, cwe, masvs, owasp-mobile, ref, description, severity, ... }
-          summary:
-            high: N, warning: N, ...
+    Classification waterfall:
+      Layer 1: Android platform prefixes
+      Layer 2: Third-party whitelist
+      Layer 3: Manifest component cross-reference
+      Layer 4: Inferred app package
+      Layer 5: Obfuscation heuristic
+      Layer 6 (external): LLM fallback
 
     Returns (classified, unclassified) lists of annotated finding dicts.
     """
     classified = []
     unclassified = []
 
-    # Infer app package (Layer 3 prep)
+    # Extract manifest components (Layer 3 prep)
+    manifest_paths, manifest_prefixes = extract_manifest_components(
+        report, third_party_prefixes
+    )
+    if manifest_paths:
+        print(f"Found {len(manifest_paths)} manifest components as app-code anchors.")
+
+    # Infer app package (Layer 4 prep)
     app_package, pkg_confidence = infer_app_package(report, third_party_prefixes)
     if app_package:
         print(f"Inferred app package: {app_package} (confidence: {pkg_confidence})")
@@ -241,7 +358,7 @@ def classify_findings(report, third_party_prefixes, verbose=False):
                 "llm_reason": "",
             }
 
-            # Layer 1
+            # Layer 1: Android platform prefixes
             result = classify_layer1(norm_path)
             if result:
                 finding.update(result)
@@ -249,7 +366,7 @@ def classify_findings(report, third_party_prefixes, verbose=False):
                 classified.append(finding)
                 continue
 
-            # Layer 2
+            # Layer 2: Third-party whitelist
             result = classify_layer2(norm_path, third_party_prefixes)
             if result:
                 finding.update(result)
@@ -257,19 +374,37 @@ def classify_findings(report, third_party_prefixes, verbose=False):
                 classified.append(finding)
                 continue
 
-            # Layer 3
-            result = classify_layer3(norm_path, app_package, pkg_confidence)
+            # Layer 3: Manifest component cross-reference
+            result = classify_manifest_component(
+                norm_path, manifest_paths, manifest_prefixes
+            )
             if result:
                 finding.update(result)
-                log_verbose(f"L3 app_code: {file_path}", verbose)
+                log_verbose(f"L3 manifest {result['classified_by']}: {file_path}", verbose)
                 classified.append(finding)
                 continue
 
-            # Unclassified — needs Layer 4 or fallback
+            # Layer 4: Inferred app package
+            result = classify_layer3(norm_path, app_package, pkg_confidence)
+            if result:
+                finding.update(result)
+                log_verbose(f"L4 app_code: {file_path}", verbose)
+                classified.append(finding)
+                continue
+
+            # Layer 5: Obfuscation heuristic
+            result = classify_obfuscated(norm_path)
+            if result:
+                finding.update(result)
+                log_verbose(f"L5 obfuscated: {file_path}", verbose)
+                classified.append(finding)
+                continue
+
+            # Unclassified — needs Layer 6 (LLM) or fallback
             finding.update({
                 "category": "unknown",
                 "confidence": "low",
-                "classified_by": "pending_layer4",
+                "classified_by": "pending_llm",
             })
             unclassified.append(finding)
             log_verbose(f"Unclassified: {file_path}", verbose)
