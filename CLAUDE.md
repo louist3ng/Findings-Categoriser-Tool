@@ -40,7 +40,7 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 | 2 — Third-party | `classifier.py` | Whitelist matching from `third_party_prefixes.yaml` |
 | 3 — Manifest Components | `classifier.py` | Cross-references AndroidManifest activities/services/receivers/providers (survive R8) |
 | 4 — App Code | `classifier.py` | Infers app root package from manifest or frequency analysis (skips obfuscated paths) |
-| 5 — Obfuscation Heuristic | `classifier.py` | Detects R8-obfuscated paths (single-letter directory segments like `a/b/c.java`) |
+| 5 — Obfuscation Heuristic | `classifier.py` | Detects R8-obfuscated paths (directory segments <= 2 chars, e.g. `A/n.java`, `a/b/c.java`, `a0/x.java`) |
 | 6 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation flag) |
 
 ### Key modules
