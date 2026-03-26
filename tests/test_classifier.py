@@ -388,8 +388,9 @@ class TestClassifyFindings:
         assert categories["android/util/Base64.java"] == "android_code"
         assert len(unclassified) == 0
 
-    def test_obfuscated_path_classified_as_obfuscated(self):
-        """Obfuscated paths should be tagged as obfuscated_unknown, not left unclassified."""
+    def test_obfuscated_path_left_unclassified_for_llm(self):
+        """Obfuscated paths should be unclassified (pending LLM first, then
+        obfuscation heuristic as final fallback in cli.py)."""
         report = {
             "code_analysis": {
                 "findings": {
@@ -411,10 +412,9 @@ class TestClassifyFindings:
             }
         }
         classified, unclassified = classify_findings(report, ())
-        assert len(unclassified) == 0
-        assert any(f["category"] == "obfuscated_unknown" for f in classified)
-        obf = [f for f in classified if f["file_path"] == "a/b/c.java"][0]
-        assert obf["classified_by"] == "obfuscation_heuristic"
+        assert len(unclassified) == 1
+        assert unclassified[0]["file_path"] == "a/b/c.java"
+        assert unclassified[0]["classified_by"] == "pending_llm"
 
     def test_manifest_component_classification(self):
         """Manifest-declared components should be classified as app_code even

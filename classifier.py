@@ -275,8 +275,8 @@ def classify_findings(report, third_party_prefixes, verbose=False):
       Layer 2: Third-party whitelist
       Layer 3: Manifest component cross-reference
       Layer 4: Inferred app package
-      Layer 5: Obfuscation heuristic
-      Layer 6 (external): LLM fallback
+      Layer 5 (external): LLM fallback
+      Layer 6 (external): Obfuscation heuristic fallback (applied to LLM failures/skips)
 
     Returns (classified, unclassified) lists of annotated finding dicts.
     """
@@ -396,15 +396,7 @@ def classify_findings(report, third_party_prefixes, verbose=False):
                 classified.append(finding)
                 continue
 
-            # Layer 5: Obfuscation heuristic
-            result = classify_obfuscated(norm_path)
-            if result:
-                finding.update(result)
-                log_verbose(f"L5 obfuscated: {file_path}", verbose)
-                classified.append(finding)
-                continue
-
-            # Unclassified — needs Layer 6 (LLM) or fallback
+            # Unclassified — needs Layer 5 (LLM) then Layer 6 (obfuscation fallback)
             finding.update({
                 "category": "unknown",
                 "confidence": "low",

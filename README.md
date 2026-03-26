@@ -109,8 +109,8 @@ Findings are classified using a waterfall of six layers, designed to handle both
 2. **Layer 2 — Third-party Code** (whitelist): Matches known library prefixes (`com/google/`, `okhttp3/`, etc.) from `third_party_prefixes.yaml`.
 3. **Layer 3 — Manifest Components** (manifest cross-reference): Activities, services, receivers, and providers declared in AndroidManifest.xml retain their real class names after R8. Files matching these components or their parent packages are classified as app code.
 4. **Layer 4 — App Code** (inferred): Infers the app's package name from the manifest or file path frequency analysis. Obfuscated paths are excluded from frequency counting so that `-keep` survivors dominate the inference.
-5. **Layer 5 — Obfuscation Heuristic**: Paths where all directory segments are 1-2 characters (e.g. `A/n.java`, `a/b/c.java`, `a0/x.java`) are tagged as `obfuscated_unknown` rather than left as generic unknowns. This catches R8's typical output of shallow, short-named package structures.
-6. **Layer 6 — LLM Fallback** (optional): Uses Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation status) to classify remaining ambiguous paths. Provider is auto-detected from available API keys or set explicitly via `--llm-provider`.
+5. **Layer 5 — LLM Fallback** (optional): Uses Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation status) to classify remaining ambiguous paths. Provider is auto-detected from available API keys or set explicitly via `--llm-provider`.
+6. **Layer 6 — Obfuscation Fallback**: Findings that the LLM could not classify (or when LLM is disabled/errors) are checked against an obfuscation heuristic. Paths where all directory segments are 1-2 characters (e.g. `A/n.java`, `a/b/c.java`, `a0/x.java`) are tagged as `obfuscated_unknown` rather than left as generic unknowns.
 
 Each layer assigns a `category`, `confidence` level, and records which layer made the decision.
 

@@ -7,7 +7,7 @@ import datetime
 
 from config import load_config
 from mobsf_client import MobSFClient
-from classifier import load_third_party_prefixes, classify_findings
+from classifier import load_third_party_prefixes, classify_findings, classify_obfuscated, _normalize_path
 from llm_fallback import classify_with_llm
 from utils import save_json
 
@@ -96,19 +96,22 @@ def main():
     third_party_prefixes = load_third_party_prefixes(args.prefixes)
     classified, unclassified = classify_findings(report, third_party_prefixes, verbose=args.verbose)
 
-    # Layer 6: LLM fallback for unclassified findings
+    # Layer 5: LLM fallback for unclassified findings
     if unclassified:
-        print(f"{len(unclassified)} findings unclassified after Layers 1-5.")
+        print(f"{len(unclassified)} findings unclassified after Layers 1-4.")
         if llm_enabled:
-            print(f"Running Layer 6 LLM fallback ({llm_provider})...")
+            print(f"Running Layer 5 LLM fallback ({llm_provider})...")
             unclassified = classify_with_llm(
                 unclassified, llm_api_key, provider=llm_provider, verbose=args.verbose
             )
-        else:
-            for f in unclassified:
-                f["classified_by"] = "skipped_no_api_key"
-                f["category"] = "unknown"
-                f["confidence"] = "low"
+
+    # Layer 6: Obfuscation heuristic — tag remaining unknown/failed findings
+    for f in unclassified:
+        if f["category"] == "unknown":
+            norm_path = _normalize_path(f.get("file_path", ""))
+            result = classify_obfuscated(norm_path)
+            if result:
+                f.update(result)
 
     all_findings = classified + unclassified
 
