@@ -41,14 +41,14 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 | 3 — Manifest Components | `classifier.py` | Cross-references AndroidManifest activities/services/receivers/providers (survive R8) |
 | 4 — App Code | `classifier.py` | Infers app root package from manifest or frequency analysis (skips obfuscated paths) |
 | 5 — Obfuscation Heuristic | `classifier.py` | Detects R8-obfuscated paths (single-letter directory segments like `a/b/c.java`) |
-| 6 — LLM Fallback | `llm_fallback.py` | Claude API with full vulnerability context (severity, CWE, description, obfuscation flag) |
+| 6 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation flag) |
 
 ### Key modules
 
 - **`cli.py`** — Entry point. Orchestrates the full workflow and parses CLI args.
 - **`mobsf_client.py`** — `MobSFClient` class wrapping MobSF REST API (`upload()`, `scan()`, `get_report()`).
 - **`classifier.py`** — `classify_findings()` returns `(classified, unclassified)` tuples through Layers 1-5. Also exposes `is_obfuscated_path()`, `extract_manifest_components()`, `classify_manifest_component()`, `classify_obfuscated()`.
-- **`llm_fallback.py`** — `classify_with_llm()` uses Claude Sonnet for Layer 6 with full vulnerability context.
+- **`llm_fallback.py`** — `classify_with_llm(findings, api_key, provider="anthropic")` supports both Anthropic (Claude Sonnet) and Google (Gemini Flash) for Layer 6. Provider is auto-detected from available API keys or set via `--llm-provider`.
 - **`config.py`** — Loads `.env`, validates required vars (`MOBSF_URL`, `MOBSF_API_KEY`).
 - **`utils.py`** — Shared logging, I/O, progress display helpers.
 - **`web/app.py`** — Flask server with `/api/data` endpoint; `launch_server()` starts it.
@@ -57,11 +57,11 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 ### External dependencies
 
 - **MobSF instance** (default `http://localhost:8000`) — required, configured via `MOBSF_URL` and `MOBSF_API_KEY` in `.env`
-- **Anthropic API** — optional (for Layer 6), configured via `ANTHROPIC_API_KEY` in `.env`
+- **Anthropic API** or **Gemini API** — optional (for Layer 6), configured via `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in `.env`
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set values. `MOBSF_API_KEY` is required. `ANTHROPIC_API_KEY` is optional (only needed without `--no-llm`).
+Copy `.env.example` to `.env` and set values. `MOBSF_API_KEY` is required. For Layer 6 LLM fallback, set `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY` (both optional — if both are set, Anthropic is used by default; override with `--llm-provider gemini`).
 
 The third-party library whitelist in `third_party_prefixes.yaml` is extensible — add package prefixes there for Layer 2 matching.
 

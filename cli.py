@@ -19,7 +19,9 @@ def parse_args():
     parser.add_argument("--apk", required=True, help="Path to the APK file to scan")
     parser.add_argument("--output", default="classified_findings.json", help="Output file path (default: classified_findings.json)")
     parser.add_argument("--prefixes", default=None, help="Path to custom third_party_prefixes YAML config file")
-    parser.add_argument("--no-llm", action="store_true", help="Skip Layer 4 LLM fallback entirely")
+    parser.add_argument("--no-llm", action="store_true", help="Skip Layer 6 LLM fallback entirely")
+    parser.add_argument("--llm-provider", choices=["anthropic", "gemini"], default=None,
+                        help="LLM provider for Layer 6 fallback (default: auto-detect from available API keys)")
     parser.add_argument("--verbose", action="store_true", help="Print classification decisions to stdout")
     parser.add_argument("--timeout", type=int, default=600, help="MobSF scan polling timeout in seconds (default: 600)")
     parser.add_argument("--no-browser", action="store_true", help="Skip auto-launching the browser")
@@ -38,13 +40,39 @@ def main():
     # Load configuration
     config = load_config()
     anthropic_key = config["anthropic_api_key"]
+    gemini_key = config["gemini_api_key"]
 
-    # Determine LLM availability
-    llm_enabled = not args.no_llm and bool(anthropic_key)
+    # Determine LLM provider and availability
+    llm_provider = None
+    llm_api_key = None
     if args.no_llm:
-        print("Layer 4 LLM fallback disabled via --no-llm flag.")
-    elif not anthropic_key:
-        print("ANTHROPIC_API_KEY not set — Layer 4 LLM fallback disabled.")
+        print("Layer 6 LLM fallback disabled via --no-llm flag.")
+    elif args.llm_provider == "gemini":
+        if gemini_key:
+            llm_provider = "gemini"
+            llm_api_key = gemini_key
+        else:
+            print("GEMINI_API_KEY not set — Layer 6 LLM fallback disabled.")
+    elif args.llm_provider == "anthropic":
+        if anthropic_key:
+            llm_provider = "anthropic"
+            llm_api_key = anthropic_key
+        else:
+            print("ANTHROPIC_API_KEY not set — Layer 6 LLM fallback disabled.")
+    else:
+        # Auto-detect: prefer Anthropic, fall back to Gemini
+        if anthropic_key:
+            llm_provider = "anthropic"
+            llm_api_key = anthropic_key
+        elif gemini_key:
+            llm_provider = "gemini"
+            llm_api_key = gemini_key
+        else:
+            print("No LLM API key set (ANTHROPIC_API_KEY or GEMINI_API_KEY) — Layer 6 LLM fallback disabled.")
+
+    llm_enabled = llm_provider is not None
+    if llm_enabled:
+        print(f"Layer 6 LLM fallback enabled (provider: {llm_provider}).")
 
     # Step 1-2: Upload APK to MobSF
     client = MobSFClient(config["mobsf_url"], config["mobsf_api_key"])
@@ -68,18 +96,17 @@ def main():
     third_party_prefixes = load_third_party_prefixes(args.prefixes)
     classified, unclassified = classify_findings(report, third_party_prefixes, verbose=args.verbose)
 
-    # Layer 4: LLM fallback for unclassified findings
+    # Layer 6: LLM fallback for unclassified findings
     if unclassified:
-        print(f"{len(unclassified)} findings unclassified after Layers 1-3.")
+        print(f"{len(unclassified)} findings unclassified after Layers 1-5.")
         if llm_enabled:
-            print("Running Layer 4 LLM fallback...")
-            unclassified = classify_with_llm(unclassified, anthropic_key, verbose=args.verbose)
+            print(f"Running Layer 6 LLM fallback ({llm_provider})...")
+            unclassified = classify_with_llm(
+                unclassified, llm_api_key, provider=llm_provider, verbose=args.verbose
+            )
         else:
             for f in unclassified:
-                if args.no_llm:
-                    f["classified_by"] = "skipped_no_api_key"
-                elif not anthropic_key:
-                    f["classified_by"] = "skipped_no_api_key"
+                f["classified_by"] = "skipped_no_api_key"
                 f["category"] = "unknown"
                 f["confidence"] = "low"
 

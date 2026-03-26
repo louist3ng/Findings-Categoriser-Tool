@@ -9,7 +9,7 @@ A Python CLI tool that uploads an APK to a locally running MobSF instance, scans
   - Install: https://mobsf.github.io/docs/#/installation
   - Get your API key from MobSF dashboard → **API Docs** (top-right menu)
 - **MobSF REST API key** — required
-- **Anthropic API key** — optional (enables Layer 4 LLM fallback for ambiguous paths)
+- **Anthropic API key** or **Gemini API key** — optional (enables Layer 6 LLM fallback for ambiguous paths)
 
 ## Installation
 
@@ -24,12 +24,14 @@ Create a `.env` file in the project root (see `.env.example`):
 ```env
 MOBSF_URL=http://localhost:8000
 MOBSF_API_KEY=your_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here  # optional, Layer 4 is skipped if not set
+ANTHROPIC_API_KEY=your_anthropic_key_here  # optional
+GEMINI_API_KEY=your_gemini_key_here        # optional
 ```
 
 - `MOBSF_URL` — Base URL of your MobSF instance (default: `http://localhost:8000`)
 - `MOBSF_API_KEY` — **Required**. Your MobSF REST API key.
-- `ANTHROPIC_API_KEY` — **Optional**. If not set, Layer 4 LLM classification is automatically skipped (no error).
+- `ANTHROPIC_API_KEY` — **Optional**. Enables Layer 6 LLM fallback using Claude.
+- `GEMINI_API_KEY` — **Optional**. Enables Layer 6 LLM fallback using Gemini. If both keys are set, Anthropic is used by default (override with `--llm-provider gemini`).
 
 ## Usage
 
@@ -48,10 +50,17 @@ This will:
 
 ### With LLM fallback enabled
 
-Set `ANTHROPIC_API_KEY` in your `.env`, then run normally:
+Set `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in your `.env`, then run normally:
 
 ```bash
 python cli.py --apk path/to/app.apk
+```
+
+### Use a specific LLM provider
+
+```bash
+python cli.py --apk path/to/app.apk --llm-provider gemini
+python cli.py --apk path/to/app.apk --llm-provider anthropic
 ```
 
 ### Skip LLM even if API key is set
@@ -85,7 +94,8 @@ python cli.py --apk path/to/app.apk --verbose
 | `--apk`       | Path to the APK file (required)                | —                            |
 | `--output`    | Output JSON file path                           | `classified_findings.json`   |
 | `--prefixes`  | Custom third-party prefixes YAML file           | `third_party_prefixes.yaml`  |
-| `--no-llm`    | Disable Layer 4 LLM fallback                   | off                          |
+| `--no-llm`    | Disable Layer 6 LLM fallback                   | off                          |
+| `--llm-provider` | LLM provider: `anthropic` or `gemini`        | auto-detect                  |
 | `--verbose`   | Print classification decisions to stdout        | off                          |
 | `--timeout`   | MobSF scan polling timeout (seconds)            | `600`                        |
 | `--no-browser`| Don't auto-open browser after scan              | off                          |
@@ -100,7 +110,7 @@ Findings are classified using a waterfall of six layers, designed to handle both
 3. **Layer 3 — Manifest Components** (manifest cross-reference): Activities, services, receivers, and providers declared in AndroidManifest.xml retain their real class names after R8. Files matching these components or their parent packages are classified as app code.
 4. **Layer 4 — App Code** (inferred): Infers the app's package name from the manifest or file path frequency analysis. Obfuscated paths (single-letter segments) are excluded from frequency counting so that `-keep` survivors dominate the inference.
 5. **Layer 5 — Obfuscation Heuristic**: Paths where all directory segments are single characters (e.g. `a/b/c.java`) are tagged as `obfuscated_unknown` rather than left as generic unknowns.
-6. **Layer 6 — LLM Fallback** (optional): Uses Claude API with full vulnerability context (severity, CWE, description, obfuscation status) to classify remaining ambiguous paths.
+6. **Layer 6 — LLM Fallback** (optional): Uses Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation status) to classify remaining ambiguous paths. Provider is auto-detected from available API keys or set explicitly via `--llm-provider`.
 
 Each layer assigns a `category`, `confidence` level, and records which layer made the decision.
 
@@ -143,15 +153,15 @@ python -m pytest tests/ -v
 ├── config.py               # .env loader, config validation
 ├── utils.py                # Shared helpers (logging, file I/O, progress)
 ├── mobsf_client.py         # MobSF REST API client
-├── classifier.py           # Layers 1-3 classification logic
-├── llm_fallback.py         # Layer 4 LLM fallback (optional)
+├── classifier.py           # Layers 1-5 classification logic
+├── llm_fallback.py         # Layer 6 LLM fallback (Anthropic/Gemini)
 ├── web/
 │   ├── app.py              # Flask server
 │   └── templates/
 │       └── index.html      # Results UI (Chart.js, expandable table)
 ├── tests/
-│   ├── test_classifier.py  # Layer 1-3 tests
-│   ├── test_llm_fallback.py# Layer 4 skip tests
+│   ├── test_classifier.py  # Layer 1-5 tests
+│   ├── test_llm_fallback.py# Layer 6 tests (skip, prompt, parse, providers)
 │   └── test_mobsf_client.py# MobSF client tests (mocked HTTP)
 ├── third_party_prefixes.yaml
 ├── requirements.txt

@@ -1,17 +1,42 @@
-"""Layer 6 — LLM fallback for ambiguous/obfuscated file paths (optional)."""
+"""Layer 6 — LLM fallback for ambiguous/obfuscated file paths (optional).
+
+Supports multiple LLM providers: Anthropic (Claude) and Google (Gemini).
+"""
 
 import json
 from classifier import is_obfuscated_path, _normalize_path
 from utils import log_verbose
 
+# Shared prompt template used by all providers
+_PROMPT_TEMPLATE = (
+    "You are an Android APK analysis expert. Classify the following finding "
+    "from a decompiled Android APK.\n\n"
+    "File path: '{file_path}'\n"
+    "Severity: {severity}\n"
+    "CWE: {cwe}\n"
+    "Description: {description}\n"
+    "Path appears obfuscated: {is_obfuscated}\n\n"
+    "Classify as one of: app_code, third_party, android_code, obfuscated_unknown.\n"
+    "If the path is obfuscated, consider whether this vulnerability type "
+    "typically appears in app code vs library code based on the CWE and description.\n"
+    'Reply in JSON only:\n'
+    '{{"category": "...", "confidence": "high|medium|low", "reason": "..."}}'
+)
 
-def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
-    """Attempt to classify unclassified findings using Claude API.
 
-    If anthropic_api_key is None or empty, marks all as skipped.
+def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
+                      verbose=False):
+    """Attempt to classify unclassified findings using an LLM provider.
+
+    Args:
+        unclassified_findings: List of finding dicts to classify.
+        api_key: API key for the chosen provider.
+        provider: "anthropic" or "gemini".
+        verbose: Print classification decisions.
+
     Returns the findings list with updated classification fields.
     """
-    if not anthropic_api_key:
+    if not api_key:
         for finding in unclassified_findings:
             finding["category"] = "unknown"
             finding["confidence"] = "low"
@@ -19,10 +44,9 @@ def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
         return unclassified_findings
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=anthropic_api_key)
+        client = _init_client(provider, api_key)
     except Exception as e:
-        print(f"Warning: Failed to initialize Anthropic client: {e}")
+        print(f"Warning: Failed to initialize {provider} client: {e}")
         for finding in unclassified_findings:
             finding["category"] = "unknown"
             finding["confidence"] = "low"
@@ -42,17 +66,17 @@ def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
 
         try:
             norm_path = _normalize_path(file_path)
-            result = _call_llm(
-                client,
+            prompt = _build_prompt(
                 file_path,
                 severity=finding.get("severity", ""),
                 cwe=finding.get("cwe", ""),
                 description=finding.get("description", ""),
                 is_obfuscated=is_obfuscated_path(norm_path),
             )
+            result = _call_llm(client, provider, prompt)
             finding["category"] = result.get("category", "unknown")
             finding["confidence"] = result.get("confidence", "low")
-            finding["classified_by"] = "llm_fallback"
+            finding["classified_by"] = f"llm_fallback_{provider}"
             finding["llm_reason"] = result.get("reason", "")
             log_verbose(f"  -> {finding['category']} ({finding['confidence']})", verbose)
         except Exception as e:
@@ -64,39 +88,67 @@ def classify_with_llm(unclassified_findings, anthropic_api_key, verbose=False):
     return unclassified_findings
 
 
-def _call_llm(client, file_path, severity="", cwe="", description="",
-              is_obfuscated=False):
-    """Call Claude API to classify a single file path with full vulnerability context."""
-    prompt = (
-        f"You are an Android APK analysis expert. Classify the following finding "
-        f"from a decompiled Android APK.\n\n"
-        f"File path: '{file_path}'\n"
-        f"Severity: {severity}\n"
-        f"CWE: {cwe}\n"
-        f"Description: {description}\n"
-        f"Path appears obfuscated: {is_obfuscated}\n\n"
-        f"Classify as one of: app_code, third_party, android_code, obfuscated_unknown.\n"
-        f"If the path is obfuscated, consider whether this vulnerability type "
-        f"typically appears in app code vs library code based on the CWE and description.\n"
-        f'Reply in JSON only:\n'
-        f'{{"category": "...", "confidence": "high|medium|low", "reason": "..."}}'
+def _init_client(provider, api_key):
+    """Initialize the LLM client for the given provider."""
+    if provider == "gemini":
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        return client
+    else:
+        import anthropic
+        return anthropic.Anthropic(api_key=api_key)
+
+
+def _build_prompt(file_path, severity="", cwe="", description="",
+                  is_obfuscated=False):
+    """Build the classification prompt with full vulnerability context."""
+    return _PROMPT_TEMPLATE.format(
+        file_path=file_path,
+        severity=severity,
+        cwe=cwe,
+        description=description,
+        is_obfuscated=is_obfuscated,
     )
 
+
+def _call_llm(client, provider, prompt):
+    """Call the LLM API and parse the JSON response."""
+    if provider == "gemini":
+        text = _call_gemini(client, prompt)
+    else:
+        text = _call_anthropic(client, prompt)
+
+    return _parse_response(text)
+
+
+def _call_anthropic(client, prompt):
+    """Call Claude API and return the raw text response."""
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=256,
         messages=[{"role": "user", "content": prompt}],
     )
+    return response.content[0].text.strip()
 
-    text = response.content[0].text.strip()
-    # Parse JSON from the response — handle cases where it's wrapped in markdown
+
+def _call_gemini(client, prompt):
+    """Call Gemini API and return the raw text response."""
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return response.text.strip()
+
+
+def _parse_response(text):
+    """Parse and validate the JSON response from any LLM provider."""
+    # Handle cases where response is wrapped in markdown code blocks
     if text.startswith("```"):
         lines = text.split("\n")
         text = "\n".join(lines[1:-1])
 
     result = json.loads(text)
 
-    # Validate category
     valid_categories = {"app_code", "third_party", "android_code", "obfuscated_unknown"}
     if result.get("category") not in valid_categories:
         result["category"] = "unknown"

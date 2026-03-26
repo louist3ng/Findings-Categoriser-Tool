@@ -20,6 +20,7 @@ def load_config(env_path=None):
         "mobsf_url": os.getenv("MOBSF_URL", "http://localhost:8000").rstrip("/"),
         "mobsf_api_key": os.getenv("MOBSF_API_KEY"),
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY"),
+        "gemini_api_key": os.getenv("GEMINI_API_KEY"),
     }
 
     if not config["mobsf_api_key"]:
