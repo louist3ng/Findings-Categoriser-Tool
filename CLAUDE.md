@@ -41,7 +41,7 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 | 2 — Third-party | `classifier.py` | Whitelist matching from `third_party_prefixes.yaml` |
 | 3 — Manifest Components | `classifier.py` | Cross-references AndroidManifest activities/services/receivers/providers (survive R8) |
 | 4 — App Code | `classifier.py` | Infers app root package from manifest or frequency analysis (skips obfuscated paths) |
-| 5 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full vulnerability context (severity, CWE, description, obfuscation flag) |
+| 5 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full vulnerability context (rule name, severity, CVSS, CWE, OWASP Mobile, MASVS, description, obfuscation flag, sibling file paths) |
 | 6 — Obfuscation Fallback | `cli.py` | Tags remaining unknown findings with obfuscated paths (dir segments <= 2 chars) as `obfuscated_unknown` |
 
 ### Key modules

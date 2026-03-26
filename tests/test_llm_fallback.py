@@ -11,12 +11,16 @@ from llm_fallback import classify_with_llm, _build_prompt, _parse_response
 
 
 def _make_finding(file_path="a/b/c.java", severity="high", cwe="CWE-321",
-                  description="Hardcoded key"):
+                  description="Hardcoded key", vuln_name="test_rule",
+                  cvss=7.5, owasp_mobile="", masvs=""):
     return {
         "file_path": file_path,
-        "vuln_name": "test_rule",
+        "vuln_name": vuln_name,
         "severity": severity,
         "cwe": cwe,
+        "cvss": cvss,
+        "owasp_mobile": owasp_mobile,
+        "masvs": masvs,
         "description": description,
         "category": "unknown",
         "confidence": "low",
@@ -63,15 +67,46 @@ class TestBuildPrompt:
             cwe="CWE-321",
             description="Hardcoded encryption key",
             is_obfuscated=True,
+            vuln_name="android_hardcoded_key",
+            cvss=7.5,
+            owasp_mobile="M2: Insecure Data Storage",
+            masvs="MSTG-STORAGE-1",
         )
         assert "high" in prompt
         assert "CWE-321" in prompt
         assert "Hardcoded encryption key" in prompt
         assert "True" in prompt
+        assert "android_hardcoded_key" in prompt
+        assert "7.5" in prompt
+        assert "M2: Insecure Data Storage" in prompt
+        assert "MSTG-STORAGE-1" in prompt
 
     def test_obfuscation_flag_false(self):
         prompt = _build_prompt("com/example/Foo.java", is_obfuscated=False)
         assert "False" in prompt
+
+    def test_sibling_paths_included(self):
+        siblings = ["d/e/f.java", "g/h/i.java", "com/google/Firebase.java"]
+        prompt = _build_prompt(
+            "a/b/c.java",
+            sibling_paths=siblings,
+        )
+        assert "d/e/f.java" in prompt
+        assert "g/h/i.java" in prompt
+        assert "com/google/Firebase.java" in prompt
+        assert "3 total" in prompt
+
+    def test_sibling_paths_truncated_at_10(self):
+        siblings = [f"path/{i}.java" for i in range(15)]
+        prompt = _build_prompt("a/b/c.java", sibling_paths=siblings)
+        # Should show first 10 and a "... and 5 more" note
+        assert "path/9.java" in prompt
+        assert "path/10.java" not in prompt
+        assert "5 more" in prompt
+
+    def test_no_siblings_no_context(self):
+        prompt = _build_prompt("a/b/c.java", sibling_paths=None)
+        assert "Other files flagged" not in prompt
 
 
 # --- Response parsing ---
