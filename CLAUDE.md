@@ -36,6 +36,7 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 
 | Layer | File | Logic |
 |-------|------|-------|
+| 0 — R8 Mapping (optional) | `r8_mapping.py` + `classifier.py` | De-obfuscates paths via `mapping.txt` before classification (`--mapping` flag) |
 | 1 — Android Code | `classifier.py` | Hard-coded Android/platform package prefixes (survive R8) |
 | 2 — Third-party | `classifier.py` | Whitelist matching from `third_party_prefixes.yaml` |
 | 3 — Manifest Components | `classifier.py` | Cross-references AndroidManifest activities/services/receivers/providers (survive R8) |
@@ -47,7 +48,8 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 
 - **`cli.py`** — Entry point. Orchestrates the full workflow, parses CLI args, and applies Layer 5 (LLM) then Layer 6 (obfuscation fallback) on unclassified findings.
 - **`mobsf_client.py`** — `MobSFClient` class wrapping MobSF REST API (`upload()`, `scan()`, `get_report()`).
-- **`classifier.py`** — `classify_findings()` returns `(classified, unclassified)` tuples through Layers 1-4. Also exposes `is_obfuscated_path()`, `classify_obfuscated()`, `extract_manifest_components()`, `classify_manifest_component()`.
+- **`r8_mapping.py`** — `parse_mapping_file(path)` parses R8/ProGuard `mapping.txt` into a reverse lookup dict; `deobfuscate_path(path, mapping)` restores original class names.
+- **`classifier.py`** — `classify_findings()` returns `(classified, unclassified)` tuples through Layers 0-4. Accepts optional `r8_mapping` dict. Also exposes `is_obfuscated_path()`, `classify_obfuscated()`, `extract_manifest_components()`, `classify_manifest_component()`.
 - **`llm_fallback.py`** — `classify_with_llm(findings, api_key, provider="anthropic")` supports both Anthropic (Claude Sonnet) and Google (Gemini Flash) for Layer 5. Provider is auto-detected from available API keys or set via `--llm-provider`.
 - **`config.py`** — Loads `.env`, validates required vars (`MOBSF_URL`, `MOBSF_API_KEY`).
 - **`utils.py`** — Shared logging, I/O, progress display helpers.
@@ -69,6 +71,7 @@ The third-party library whitelist in `third_party_prefixes.yaml` is extensible �
 
 Tests use `pytest` with `responses` for HTTP mocking. Test files mirror source modules:
 - `tests/test_classifier.py` — Layers 1-4 classification logic (including manifest tests)
+- `tests/test_r8_mapping.py` — R8 mapping parser, de-obfuscation, and integration with classify_findings
 - `tests/test_llm_fallback.py` — Layer 5 LLM integration
 - `tests/test_mobsf_client.py` — Mocked MobSF API client
 

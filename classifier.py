@@ -265,18 +265,23 @@ def _normalize_path(path):
     return path
 
 
-def classify_findings(report, third_party_prefixes, verbose=False):
+def classify_findings(report, third_party_prefixes, verbose=False, r8_mapping=None):
     """Classify all findings from the code_analysis section of a MobSF report.
 
     Only processes code_analysis.findings — skips summary and other sections.
 
     Classification waterfall:
+      Layer 0 (optional): R8 mapping de-obfuscation (restores original class paths)
       Layer 1: Android platform prefixes
       Layer 2: Third-party whitelist
       Layer 3: Manifest component cross-reference
       Layer 4: Inferred app package
       Layer 5 (external): LLM fallback
       Layer 6 (external): Obfuscation heuristic fallback (applied to LLM failures/skips)
+
+    Args:
+        r8_mapping: Optional dict from r8_mapping.parse_mapping_file() mapping
+                    obfuscated slash paths to original slash paths.
 
     Returns (classified, unclassified) lists of annotated finding dicts.
     """
@@ -347,8 +352,19 @@ def classify_findings(report, third_party_prefixes, verbose=False):
 
         for file_path, line_numbers in files_dict.items():
             norm_path = _normalize_path(file_path)
+
+            # Layer 0: R8 mapping de-obfuscation
+            original_path = None
+            if r8_mapping:
+                from r8_mapping import deobfuscate_path
+                original_path = deobfuscate_path(norm_path, r8_mapping)
+                if original_path:
+                    log_verbose(f"L0 deobfuscate: {norm_path} → {original_path}", verbose)
+                    norm_path = original_path
+
             finding = {
                 "file_path": file_path,
+                "original_path": original_path or "",
                 "line_numbers": str(line_numbers) if line_numbers else "",
                 "vuln_name": rule_id,
                 "severity": severity,

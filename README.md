@@ -63,6 +63,12 @@ python cli.py --apk path/to/app.apk --llm-provider gemini
 python cli.py --apk path/to/app.apk --llm-provider anthropic
 ```
 
+### De-obfuscate with R8 mapping file
+
+```bash
+python cli.py --apk path/to/app-release.apk --mapping app/build/outputs/mapping/release/mapping.txt
+```
+
 ### Skip LLM even if API key is set
 
 ```bash
@@ -92,6 +98,7 @@ python cli.py --apk path/to/app.apk --verbose
 | Flag          | Description                                     | Default                      |
 |---------------|------------------------------------------------|------------------------------|
 | `--apk`       | Path to the APK file (required)                | —                            |
+| `--mapping`   | Path to R8/ProGuard `mapping.txt` for de-obfuscation | —                     |
 | `--output`    | Output JSON file path                           | `classified_findings.json`   |
 | `--prefixes`  | Custom third-party prefixes YAML file           | `third_party_prefixes.yaml`  |
 | `--no-llm`    | Disable Layer 5 LLM fallback (unclassified findings skip straight to Layer 6 obfuscation heuristic) | off                          |
@@ -103,8 +110,9 @@ python cli.py --apk path/to/app.apk --verbose
 
 ## Classification Layers
 
-Findings are classified using a waterfall of six layers, designed to handle both debug and R8/ProGuard-obfuscated APKs:
+Findings are classified using a waterfall of six layers (plus an optional Layer 0), designed to handle both debug and R8/ProGuard-obfuscated APKs:
 
+0. **Layer 0 — R8 Mapping De-obfuscation** (optional): When `--mapping` is provided, obfuscated class paths (e.g. `a/b/c.java`) are translated back to their original names (e.g. `com/example/myapp/CryptoHelper.java`) using the R8/ProGuard `mapping.txt` file. This runs before all other layers, allowing Layers 1-4 to classify de-obfuscated paths normally. The original obfuscated path is preserved in the `file_path` field; the restored path is stored in `original_path`.
 1. **Layer 1 — Android Code** (rule-based): Matches known Android/platform prefixes (`android/`, `java/`, `javax/`, etc.). These survive obfuscation.
 2. **Layer 2 — Third-party Code** (whitelist): Matches known library prefixes (`com/google/`, `okhttp3/`, etc.) from `third_party_prefixes.yaml`.
 3. **Layer 3 — Manifest Components** (manifest cross-reference): Activities, services, receivers, and providers declared in AndroidManifest.xml retain their real class names after R8. Files matching these components or their parent packages are classified as app code.

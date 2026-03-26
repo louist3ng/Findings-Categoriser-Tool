@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--apk", required=True, help="Path to the APK file to scan")
     parser.add_argument("--output", default="classified_findings.json", help="Output file path (default: classified_findings.json)")
     parser.add_argument("--prefixes", default=None, help="Path to custom third_party_prefixes YAML config file")
+    parser.add_argument("--mapping", default=None, help="Path to R8/ProGuard mapping.txt file for de-obfuscation (restores original class names before classification)")
     parser.add_argument("--no-llm", action="store_true", help="Skip Layer 5 LLM fallback entirely (findings go straight to obfuscation heuristic)")
     parser.add_argument("--llm-provider", choices=["anthropic", "gemini"], default=None,
                         help="LLM provider for Layer 5 fallback (default: auto-detect from available API keys)")
@@ -72,7 +73,7 @@ def main():
 
     llm_enabled = llm_provider is not None
     if llm_enabled:
-        print(f"Layer 6 LLM fallback enabled (provider: {llm_provider}).")
+        print(f"Layer 5 LLM fallback enabled (provider: {llm_provider}).")
 
     # Step 1-2: Upload APK to MobSF
     client = MobSFClient(config["mobsf_url"], config["mobsf_api_key"])
@@ -91,10 +92,22 @@ def main():
     save_json(report, raw_report_path)
     print(f"Raw MobSF report saved to {raw_report_path}")
 
+    # Load R8 mapping file if provided
+    r8_mapping = None
+    if args.mapping:
+        if not os.path.isfile(args.mapping):
+            print(f"Error: Mapping file not found: {args.mapping}")
+            sys.exit(1)
+        from r8_mapping import parse_mapping_file
+        r8_mapping = parse_mapping_file(args.mapping)
+        print(f"Loaded R8 mapping file: {len(r8_mapping)} class mappings from {args.mapping}")
+
     # Step 4-5: Classify findings
     print("\nClassifying findings...")
     third_party_prefixes = load_third_party_prefixes(args.prefixes)
-    classified, unclassified = classify_findings(report, third_party_prefixes, verbose=args.verbose)
+    classified, unclassified = classify_findings(
+        report, third_party_prefixes, verbose=args.verbose, r8_mapping=r8_mapping
+    )
 
     # Layer 5: LLM fallback for unclassified findings
     if unclassified:
@@ -123,6 +136,7 @@ def main():
             "file_hash": file_hash,
             "scan_date": scan_date,
             "total_findings": len(all_findings),
+            "r8_mapping": os.path.basename(args.mapping) if args.mapping else None,
             "llm_enabled": llm_enabled,
         },
         "findings": all_findings,
