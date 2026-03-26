@@ -41,7 +41,7 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 | 2 — Third-party | `classifier.py` | Whitelist matching from `third_party_prefixes.yaml` |
 | 3 — Manifest Components | `classifier.py` | Cross-references AndroidManifest activities/services/receivers/providers (survive R8) |
 | 4 — App Code | `classifier.py` | Infers app root package from manifest or frequency analysis (skips obfuscated paths) |
-| 5 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full context: rule name, severity, CVSS, CWE, OWASP Mobile, MASVS, description, obfuscation flag, sibling paths, and per-file API/behaviour profiles from MobSF |
+| 5 — LLM Fallback | `llm_fallback.py` | Claude or Gemini API with full vulnerability context (rule name, severity, CVSS, CWE, OWASP Mobile, MASVS, description, obfuscation flag, sibling file paths) |
 | 6 — Obfuscation Fallback | `cli.py` | Tags remaining unknown findings with obfuscated paths (dir segments <= 2 chars) as `obfuscated_unknown` |
 
 ### Key modules
@@ -49,7 +49,7 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 - **`cli.py`** — Entry point. Orchestrates the full workflow, parses CLI args, and applies Layer 5 (LLM) then Layer 6 (obfuscation fallback) on unclassified findings.
 - **`mobsf_client.py`** — `MobSFClient` class wrapping MobSF REST API (`upload()`, `scan()`, `get_report()`).
 - **`r8_mapping.py`** — `parse_mapping_file(path)` parses R8/ProGuard `mapping.txt` into a reverse lookup dict; `deobfuscate_path(path, mapping)` restores original class names.
-- **`classifier.py`** — `classify_findings()` returns `(classified, unclassified)` tuples through Layers 0-4. Accepts optional `r8_mapping` dict. Also exposes `is_obfuscated_path()`, `classify_obfuscated()`, `extract_manifest_components()`, `classify_manifest_component()`, `extract_file_api_profiles()`.
+- **`classifier.py`** — `classify_findings()` returns `(classified, unclassified)` tuples through Layers 0-4. Accepts optional `r8_mapping` dict. Also exposes `is_obfuscated_path()`, `classify_obfuscated()`, `extract_manifest_components()`, `classify_manifest_component()`.
 - **`llm_fallback.py`** — `classify_with_llm(findings, api_key, provider="anthropic")` supports both Anthropic (Claude Sonnet) and Google (Gemini Flash) for Layer 5. Provider is auto-detected from available API keys or set via `--llm-provider`.
 - **`config.py`** — Loads `.env`, validates required vars (`MOBSF_URL`, `MOBSF_API_KEY`).
 - **`utils.py`** — Shared logging, I/O, progress display helpers.

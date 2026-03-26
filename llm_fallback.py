@@ -20,14 +20,9 @@ _PROMPT_TEMPLATE = (
     "MASVS: {masvs}\n"
     "Description: {description}\n"
     "Path appears obfuscated: {is_obfuscated}\n"
-    "{api_profile_context}"
     "{sibling_context}\n"
     "Classify as one of: app_code, third_party, android_code, obfuscated_unknown.\n\n"
     "Consider:\n"
-    "- The API usage profile reveals what this class actually does — networking "
-    "APIs suggest a library, while UI/storage/IPC APIs may suggest app code.\n"
-    "- Behaviour descriptions provide high-level intent (e.g. 'Connect to URL' "
-    "= networking library, 'Read file into stream' = I/O utility).\n"
     "- The vulnerability rule name and CWE often reveal whether this is app-specific "
     "logic or a common library pattern.\n"
     "- If sibling files are shown, use them to identify the package's origin "
@@ -42,7 +37,7 @@ _PROMPT_TEMPLATE = (
 
 
 def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
-                      verbose=False, file_api_profiles=None):
+                      verbose=False):
     """Attempt to classify unclassified findings using an LLM provider.
 
     Args:
@@ -50,8 +45,6 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
         api_key: API key for the chosen provider.
         provider: "anthropic" or "gemini".
         verbose: Print classification decisions.
-        file_api_profiles: Optional dict mapping file paths to lists of
-                           API/behaviour strings from the MobSF report.
 
     Returns the findings list with updated classification fields.
     """
@@ -97,10 +90,6 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
             vuln_name = finding.get("vuln_name", "")
             # Sibling paths: other files under the same rule (excluding self)
             sibling_paths = [p for p in siblings.get(vuln_name, []) if p != file_path]
-            # API/behaviour profile for this file
-            api_profile = None
-            if file_api_profiles:
-                api_profile = file_api_profiles.get(file_path)
             prompt = _build_prompt(
                 file_path,
                 severity=finding.get("severity", ""),
@@ -112,7 +101,6 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
                 owasp_mobile=finding.get("owasp_mobile", ""),
                 masvs=finding.get("masvs", ""),
                 sibling_paths=sibling_paths if sibling_paths else None,
-                api_profile=api_profile,
             )
             result = _call_llm(client, provider, prompt)
             finding["category"] = result.get("category", "unknown")
@@ -142,27 +130,13 @@ def _init_client(provider, api_key):
 
 def _build_prompt(file_path, severity="", cwe="", description="",
                   is_obfuscated=False, vuln_name="", cvss="", owasp_mobile="",
-                  masvs="", sibling_paths=None, api_profile=None):
+                  masvs="", sibling_paths=None):
     """Build the classification prompt with full vulnerability context.
 
     Args:
         sibling_paths: Optional list of other file paths flagged under the same
                        vulnerability rule.  Helps the LLM identify package patterns.
-        api_profile: Optional list of API/behaviour strings for this file from
-                     the MobSF report (e.g. ["api_http_connection",
-                     "behaviour:Connect to a URL"]).
     """
-    api_profile_context = ""
-    if api_profile:
-        apis = [a for a in api_profile if not a.startswith("behaviour:")]
-        behaviours = [a.replace("behaviour:", "") for a in api_profile if a.startswith("behaviour:")]
-        parts = []
-        if apis:
-            parts.append("Android APIs used: " + ", ".join(apis))
-        if behaviours:
-            parts.append("Behaviours detected: " + ", ".join(behaviours))
-        api_profile_context = "\n".join(parts) + "\n"
-
     sibling_context = ""
     if sibling_paths:
         # Show up to 10 siblings for context, truncate to keep prompt small
@@ -186,7 +160,6 @@ def _build_prompt(file_path, severity="", cwe="", description="",
         owasp_mobile=owasp_mobile,
         masvs=masvs,
         sibling_context=sibling_context,
-        api_profile_context=api_profile_context,
     )
 
 
