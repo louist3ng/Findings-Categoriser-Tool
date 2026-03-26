@@ -104,7 +104,7 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
             )
             result = _call_llm(client, provider, prompt)
             finding["category"] = result.get("category", "unknown")
-            finding["confidence"] = result.get("confidence", "low")
+            finding["confidence"] = "low"
             finding["classified_by"] = f"llm_fallback_{provider}"
             finding["llm_reason"] = result.get("reason", "")
             log_verbose(f"  -> {finding['category']} ({finding['confidence']})", verbose)
