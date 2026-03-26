@@ -42,15 +42,19 @@ def load_third_party_prefixes(config_path=None):
 def is_obfuscated_path(file_path):
     """Detect R8/ProGuard-obfuscated paths where all directory segments are single characters.
 
-    Examples: a/b/c.java, a/b/C.java, x/y/z/Foo.java
+    R8 often flattens packages into shallow structures like:
+      - a/b/c.java (3 segments — deep obfuscation)
+      - A/n.java, e/q.java (2 segments — single-letter dir + short filename)
+      - k/AbstractC0079l0.java (2 segments — single-letter dir + mangled class name)
+
     Non-obfuscated: com/example/myapp/Main.java, io/reactivex/Observable.java
     """
     parts = file_path.split("/")
-    if len(parts) < 3:
+    if len(parts) < 2:
         return False
     # Check directory segments only (exclude filename)
     dir_segments = parts[:-1]
-    return all(len(seg) == 1 for seg in dir_segments)
+    return all(len(seg) <= 2 for seg in dir_segments)
 
 
 def classify_layer1(file_path):

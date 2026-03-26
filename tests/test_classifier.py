@@ -308,6 +308,18 @@ class TestIsObfuscatedPath:
     def test_mixed_case_obfuscated(self):
         assert is_obfuscated_path("a/b/C.java") is True
 
+    def test_shallow_obfuscated(self):
+        """R8 often flattens to single dir + filename (e.g. A/n.java)."""
+        assert is_obfuscated_path("A/n.java") is True
+
+    def test_two_char_dir_obfuscated(self):
+        """R8 sometimes uses 2-char directory segments (e.g. a0/a.java)."""
+        assert is_obfuscated_path("a0/a.java") is True
+
+    def test_mangled_class_name_obfuscated(self):
+        """R8 mangles class names like AbstractC0079l0 under short dirs."""
+        assert is_obfuscated_path("k/AbstractC0079l0.java") is True
+
     def test_real_package_not_obfuscated(self):
         assert is_obfuscated_path("com/example/myapp/Main.java") is False
 
@@ -315,15 +327,11 @@ class TestIsObfuscatedPath:
         """Packages like io/reactivex/ have multi-char segments."""
         assert is_obfuscated_path("io/reactivex/Observable.java") is False
 
-    def test_too_few_segments(self):
-        """Paths with fewer than 3 segments are not flagged."""
-        assert is_obfuscated_path("a/B.java") is False
-
     def test_single_file_no_dirs(self):
         assert is_obfuscated_path("Main.java") is False
 
     def test_one_real_dir_segment(self):
-        """If any directory segment is multi-char, it's not obfuscated."""
+        """If any directory segment is >2 chars, it's not obfuscated."""
         assert is_obfuscated_path("com/a/B.java") is False
 
     def test_single_letter_with_long_filename(self):
