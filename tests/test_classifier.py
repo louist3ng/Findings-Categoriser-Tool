@@ -17,6 +17,7 @@ from classifier import (
     classify_obfuscated,
     extract_manifest_components,
     classify_manifest_component,
+    extract_file_api_profiles,
 )
 
 
@@ -447,3 +448,71 @@ class TestClassifyFindings:
         assert len(classified) == 1
         assert classified[0]["category"] == "app_code"
         assert classified[0]["classified_by"] in ("manifest_component", "manifest_package")
+
+
+# --- extract_file_api_profiles ---
+
+class TestExtractFileApiProfiles:
+    def test_extracts_android_api(self):
+        report = {
+            "android_api": {
+                "api_http_connection": {
+                    "files": {"P/b.java": "54,81"},
+                    "metadata": {"description": "HTTP Connection", "severity": "info"},
+                },
+                "api_local_file_io": {
+                    "files": {"A/n.java": "46,47", "P/b.java": "7"},
+                    "metadata": {"description": "Local File I/O", "severity": "info"},
+                },
+            }
+        }
+        profiles = extract_file_api_profiles(report)
+        assert "api_http_connection" in profiles["P/b.java"]
+        assert "api_local_file_io" in profiles["P/b.java"]
+        assert "api_local_file_io" in profiles["A/n.java"]
+        assert "api_http_connection" not in profiles["A/n.java"]
+
+    def test_extracts_behaviour(self):
+        report = {
+            "behaviour": {
+                "00096": {
+                    "files": {"P/b.java": "54,81"},
+                    "metadata": {
+                        "label": ["network"],
+                        "description": "Connect to a URL and set request method",
+                        "severity": "info",
+                    },
+                }
+            }
+        }
+        profiles = extract_file_api_profiles(report)
+        assert "behaviour:Connect to a URL and set request method" in profiles["P/b.java"]
+
+    def test_combines_api_and_behaviour(self):
+        report = {
+            "android_api": {
+                "api_http_connection": {
+                    "files": {"P/b.java": "54"},
+                    "metadata": {"description": "HTTP", "severity": "info"},
+                },
+            },
+            "behaviour": {
+                "001": {
+                    "files": {"P/b.java": "54"},
+                    "metadata": {"description": "Connect to URL", "severity": "info"},
+                }
+            }
+        }
+        profiles = extract_file_api_profiles(report)
+        assert len(profiles["P/b.java"]) == 2
+        assert "api_http_connection" in profiles["P/b.java"]
+        assert "behaviour:Connect to URL" in profiles["P/b.java"]
+
+    def test_empty_report(self):
+        profiles = extract_file_api_profiles({})
+        assert profiles == {}
+
+    def test_missing_sections(self):
+        report = {"package_name": "com.test"}
+        profiles = extract_file_api_profiles(report)
+        assert profiles == {}

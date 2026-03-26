@@ -252,6 +252,49 @@ def _collect_file_paths(report):
     return paths
 
 
+def extract_file_api_profiles(report):
+    """Extract per-file API usage and behaviour profiles from a MobSF report.
+
+    Combines data from report['android_api'] and report['behaviour'] to build
+    a dict mapping file paths to their API/behaviour fingerprints.
+
+    Returns:
+        dict: {file_path: list_of_api_strings}
+              e.g. {"A/n.java": ["api_local_file_io", "api_java_reflection",
+                                  "behaviour:Read file and put it into a stream"]}
+    """
+    from collections import defaultdict
+    profiles = defaultdict(list)
+
+    # Android API usage (e.g. api_http_connection, api_clipboard, api_gps)
+    android_api = report.get("android_api", {})
+    if isinstance(android_api, dict):
+        for api_name, api_data in android_api.items():
+            if not isinstance(api_data, dict):
+                continue
+            files = api_data.get("files", {})
+            if isinstance(files, dict):
+                for fp in files:
+                    profiles[fp].append(api_name)
+
+    # Behaviour patterns (higher-level descriptions)
+    behaviour = report.get("behaviour", {})
+    if isinstance(behaviour, dict):
+        for _beh_id, beh_data in behaviour.items():
+            if not isinstance(beh_data, dict):
+                continue
+            meta = beh_data.get("metadata", {})
+            desc = meta.get("description", "")
+            if not desc:
+                continue
+            files = beh_data.get("files", {})
+            if isinstance(files, dict):
+                for fp in files:
+                    profiles[fp].append(f"behaviour:{desc}")
+
+    return dict(profiles)
+
+
 def _normalize_path(path):
     """Normalize a file path for comparison."""
     # Strip leading slashes and smali/java prefixes

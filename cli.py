@@ -7,7 +7,7 @@ import datetime
 
 from config import load_config
 from mobsf_client import MobSFClient
-from classifier import load_third_party_prefixes, classify_findings, classify_obfuscated, _normalize_path
+from classifier import load_third_party_prefixes, classify_findings, classify_obfuscated, _normalize_path, extract_file_api_profiles
 from llm_fallback import classify_with_llm
 from utils import save_json
 
@@ -109,13 +109,19 @@ def main():
         report, third_party_prefixes, verbose=args.verbose, r8_mapping=r8_mapping
     )
 
+    # Extract per-file API/behaviour profiles for LLM context
+    file_api_profiles = extract_file_api_profiles(report)
+    if file_api_profiles:
+        print(f"Extracted API/behaviour profiles for {len(file_api_profiles)} files.")
+
     # Layer 5: LLM fallback for unclassified findings
     if unclassified:
         print(f"{len(unclassified)} findings unclassified after Layers 1-4.")
         if llm_enabled:
             print(f"Running Layer 5 LLM fallback ({llm_provider})...")
             unclassified = classify_with_llm(
-                unclassified, llm_api_key, provider=llm_provider, verbose=args.verbose
+                unclassified, llm_api_key, provider=llm_provider,
+                verbose=args.verbose, file_api_profiles=file_api_profiles,
             )
 
     # Layer 6: Obfuscation heuristic — tag remaining unknown/failed findings

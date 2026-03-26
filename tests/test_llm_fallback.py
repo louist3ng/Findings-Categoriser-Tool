@@ -108,6 +108,33 @@ class TestBuildPrompt:
         prompt = _build_prompt("a/b/c.java", sibling_paths=None)
         assert "Other files flagged" not in prompt
 
+    def test_api_profile_included(self):
+        profile = ["api_http_connection", "api_https_connection",
+                    "behaviour:Connect to a URL and get the response code"]
+        prompt = _build_prompt("P/b.java", api_profile=profile)
+        assert "api_http_connection" in prompt
+        assert "api_https_connection" in prompt
+        assert "Connect to a URL and get the response code" in prompt
+        assert "Android APIs used:" in prompt
+        assert "Behaviours detected:" in prompt
+
+    def test_api_profile_apis_only(self):
+        profile = ["api_local_file_io", "api_java_reflection"]
+        prompt = _build_prompt("A/n.java", api_profile=profile)
+        assert "Android APIs used: api_local_file_io, api_java_reflection" in prompt
+        assert "Behaviours detected:" not in prompt
+
+    def test_api_profile_behaviours_only(self):
+        profile = ["behaviour:Read file and put it into a stream"]
+        prompt = _build_prompt("A/n.java", api_profile=profile)
+        assert "Behaviours detected: Read file and put it into a stream" in prompt
+        assert "Android APIs used:" not in prompt
+
+    def test_no_api_profile_no_context(self):
+        prompt = _build_prompt("a/b/c.java", api_profile=None)
+        assert "Android APIs used:" not in prompt
+        assert "Behaviours detected:" not in prompt
+
 
 # --- Response parsing ---
 
