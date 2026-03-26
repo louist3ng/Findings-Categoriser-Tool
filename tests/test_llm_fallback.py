@@ -135,6 +135,20 @@ class TestBuildPrompt:
         assert "Android APIs used:" not in prompt
         assert "Behaviours detected:" not in prompt
 
+    def test_app_context_included(self):
+        prompt = _build_prompt(
+            "a/b/c.java",
+            app_package="com.test.reachability",
+            manifest_count=7,
+        )
+        assert "com.test.reachability" in prompt
+        assert "7" in prompt
+
+    def test_default_app_context(self):
+        prompt = _build_prompt("a/b/c.java")
+        assert "unknown" in prompt  # default app_package
+        assert "0" in prompt  # default manifest_count
+
 
 # --- Response parsing ---
 

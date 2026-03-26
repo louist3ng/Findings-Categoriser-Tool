@@ -114,6 +114,13 @@ def main():
     if file_api_profiles:
         print(f"Extracted API/behaviour profiles for {len(file_api_profiles)} files.")
 
+    # Extract app context for LLM
+    app_package = report.get("package_name", "")
+    manifest_count = sum(
+        len(report.get(k, []))
+        for k in ("activities", "services", "receivers", "providers")
+    )
+
     # Layer 5: LLM fallback for unclassified findings
     if unclassified:
         print(f"{len(unclassified)} findings unclassified after Layers 1-4.")
@@ -122,6 +129,7 @@ def main():
             unclassified = classify_with_llm(
                 unclassified, llm_api_key, provider=llm_provider,
                 verbose=args.verbose, file_api_profiles=file_api_profiles,
+                app_package=app_package, manifest_count=manifest_count,
             )
 
     # Layer 6: Obfuscation heuristic — tag remaining unknown/failed findings
