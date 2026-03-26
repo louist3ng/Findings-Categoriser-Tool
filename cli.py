@@ -19,9 +19,9 @@ def parse_args():
     parser.add_argument("--apk", required=True, help="Path to the APK file to scan")
     parser.add_argument("--output", default="classified_findings.json", help="Output file path (default: classified_findings.json)")
     parser.add_argument("--prefixes", default=None, help="Path to custom third_party_prefixes YAML config file")
-    parser.add_argument("--no-llm", action="store_true", help="Skip Layer 6 LLM fallback entirely")
+    parser.add_argument("--no-llm", action="store_true", help="Skip Layer 5 LLM fallback entirely (findings go straight to obfuscation heuristic)")
     parser.add_argument("--llm-provider", choices=["anthropic", "gemini"], default=None,
-                        help="LLM provider for Layer 6 fallback (default: auto-detect from available API keys)")
+                        help="LLM provider for Layer 5 fallback (default: auto-detect from available API keys)")
     parser.add_argument("--verbose", action="store_true", help="Print classification decisions to stdout")
     parser.add_argument("--timeout", type=int, default=600, help="MobSF scan polling timeout in seconds (default: 600)")
     parser.add_argument("--no-browser", action="store_true", help="Skip auto-launching the browser")
@@ -46,19 +46,19 @@ def main():
     llm_provider = None
     llm_api_key = None
     if args.no_llm:
-        print("Layer 6 LLM fallback disabled via --no-llm flag.")
+        print("Layer 5 LLM fallback disabled via --no-llm flag.")
     elif args.llm_provider == "gemini":
         if gemini_key:
             llm_provider = "gemini"
             llm_api_key = gemini_key
         else:
-            print("GEMINI_API_KEY not set — Layer 6 LLM fallback disabled.")
+            print("GEMINI_API_KEY not set — Layer 5 LLM fallback disabled.")
     elif args.llm_provider == "anthropic":
         if anthropic_key:
             llm_provider = "anthropic"
             llm_api_key = anthropic_key
         else:
-            print("ANTHROPIC_API_KEY not set — Layer 6 LLM fallback disabled.")
+            print("ANTHROPIC_API_KEY not set — Layer 5 LLM fallback disabled.")
     else:
         # Auto-detect: prefer Anthropic, fall back to Gemini
         if anthropic_key:
@@ -68,7 +68,7 @@ def main():
             llm_provider = "gemini"
             llm_api_key = gemini_key
         else:
-            print("No LLM API key set (ANTHROPIC_API_KEY or GEMINI_API_KEY) — Layer 6 LLM fallback disabled.")
+            print("No LLM API key set (ANTHROPIC_API_KEY or GEMINI_API_KEY) — Layer 5 LLM fallback disabled.")
 
     llm_enabled = llm_provider is not None
     if llm_enabled:

@@ -94,8 +94,8 @@ python cli.py --apk path/to/app.apk --verbose
 | `--apk`       | Path to the APK file (required)                | —                            |
 | `--output`    | Output JSON file path                           | `classified_findings.json`   |
 | `--prefixes`  | Custom third-party prefixes YAML file           | `third_party_prefixes.yaml`  |
-| `--no-llm`    | Disable Layer 6 LLM fallback                   | off                          |
-| `--llm-provider` | LLM provider: `anthropic` or `gemini`        | auto-detect                  |
+| `--no-llm`    | Disable Layer 5 LLM fallback (unclassified findings skip straight to Layer 6 obfuscation heuristic) | off                          |
+| `--llm-provider` | LLM provider for Layer 5: `anthropic` or `gemini` | auto-detect                  |
 | `--verbose`   | Print classification decisions to stdout        | off                          |
 | `--timeout`   | MobSF scan polling timeout (seconds)            | `600`                        |
 | `--no-browser`| Don't auto-open browser after scan              | off                          |

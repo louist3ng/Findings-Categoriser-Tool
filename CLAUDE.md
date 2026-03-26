@@ -61,15 +61,15 @@ python -m pytest tests/test_classifier.py::TestClassName::test_name -v
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set values. `MOBSF_API_KEY` is required. For Layer 6 LLM fallback, set `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY` (both optional — if both are set, Anthropic is used by default; override with `--llm-provider gemini`).
+Copy `.env.example` to `.env` and set values. `MOBSF_API_KEY` is required. For Layer 5 LLM fallback, set `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY` (both optional — if both are set, Anthropic is used by default; override with `--llm-provider gemini`). Use `--no-llm` to skip the LLM entirely even when API keys are configured.
 
 The third-party library whitelist in `third_party_prefixes.yaml` is extensible — add package prefixes there for Layer 2 matching.
 
 ## Testing
 
 Tests use `pytest` with `responses` for HTTP mocking. Test files mirror source modules:
-- `tests/test_classifier.py` — Layers 1-5 classification logic (including obfuscation and manifest tests)
-- `tests/test_llm_fallback.py` — Layer 6 LLM integration
+- `tests/test_classifier.py` — Layers 1-4 classification logic (including manifest tests)
+- `tests/test_llm_fallback.py` — Layer 5 LLM integration
 - `tests/test_mobsf_client.py` — Mocked MobSF API client
 
 Categories: `app_code`, `third_party`, `android_code`, `obfuscated_unknown`, `unknown`
