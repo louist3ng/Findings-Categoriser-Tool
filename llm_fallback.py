@@ -11,8 +11,6 @@ from utils import log_verbose
 _PROMPT_TEMPLATE = (
     "You are an Android APK analysis expert. Classify the following finding "
     "from a decompiled Android APK.\n\n"
-    "App package name: {app_package}\n"
-    "App manifest components: {manifest_count} (activities, services, receivers, providers)\n"
     "File path: '{file_path}'\n"
     "Vulnerability rule: {vuln_name}\n"
     "Severity: {severity}\n"
@@ -25,32 +23,26 @@ _PROMPT_TEMPLATE = (
     "{api_profile_context}"
     "{sibling_context}\n"
     "Classify as one of: app_code, third_party, android_code, obfuscated_unknown.\n\n"
-    "IMPORTANT context for obfuscated paths:\n"
-    "- The app has {manifest_count} manifest components. A small app (< 10 components) "
-    "typically has only a few source files — most obfuscated code is bundled "
-    "third-party libraries (AndroidX, Jetpack, etc.) that were minified by R8.\n"
-    "- Only classify as app_code if there is strong evidence the file belongs to "
-    "the app itself (e.g. path matches app package, or the vulnerability is clearly "
-    "app-specific like hardcoded secrets in app-specific storage).\n"
-    "- AndroidX/Jetpack libraries (obfuscated to e/, k/, z/, s/, etc.) commonly "
-    "trigger logging, reflection, and system service findings — these are third_party, "
-    "not app_code.\n"
-    "- API profiles like api_get_system_service, api_java_reflection, api_dexloading, "
-    "api_clipboard are typical of AndroidX framework libraries.\n"
-    "- When in doubt about an obfuscated path, prefer obfuscated_unknown over "
-    "guessing app_code.\n\n"
-    "Other considerations:\n"
-    "- If sibling files are shown, use them to identify the package's origin.\n"
-    "- Behaviour descriptions provide high-level intent.\n"
-    "- The vulnerability rule name and CWE can reveal app-specific vs library patterns.\n\n"
+    "Consider:\n"
+    "- The API usage profile reveals what this class actually does — networking "
+    "APIs suggest a library, while UI/storage/IPC APIs may suggest app code.\n"
+    "- Behaviour descriptions provide high-level intent (e.g. 'Connect to URL' "
+    "= networking library, 'Read file into stream' = I/O utility).\n"
+    "- The vulnerability rule name and CWE often reveal whether this is app-specific "
+    "logic or a common library pattern.\n"
+    "- If sibling files are shown, use them to identify the package's origin "
+    "(e.g. if siblings include well-known library paths, this is likely third_party).\n"
+    "- If the path is obfuscated but the vulnerability is typically introduced by "
+    "app developers (e.g. hardcoded keys, logging), lean towards app_code.\n"
+    "- If the path is obfuscated and the vulnerability is common in libraries "
+    "(e.g. certificate validation, SSL pinning bypass), lean towards third_party.\n\n"
     'Reply in JSON only:\n'
     '{{"category": "...", "confidence": "high|medium|low", "reason": "..."}}'
 )
 
 
 def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
-                      verbose=False, file_api_profiles=None,
-                      app_package="", manifest_count=0):
+                      verbose=False, file_api_profiles=None):
     """Attempt to classify unclassified findings using an LLM provider.
 
     Args:
@@ -60,9 +52,6 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
         verbose: Print classification decisions.
         file_api_profiles: Optional dict mapping file paths to lists of
                            API/behaviour strings from the MobSF report.
-        app_package: The app's package name (e.g. "com.example.myapp").
-        manifest_count: Number of manifest components (activities + services +
-                        receivers + providers) — helps LLM gauge app size.
 
     Returns the findings list with updated classification fields.
     """
@@ -124,8 +113,6 @@ def classify_with_llm(unclassified_findings, api_key, provider="anthropic",
                 masvs=finding.get("masvs", ""),
                 sibling_paths=sibling_paths if sibling_paths else None,
                 api_profile=api_profile,
-                app_package=app_package,
-                manifest_count=manifest_count,
             )
             result = _call_llm(client, provider, prompt)
             finding["category"] = result.get("category", "unknown")
@@ -155,8 +142,7 @@ def _init_client(provider, api_key):
 
 def _build_prompt(file_path, severity="", cwe="", description="",
                   is_obfuscated=False, vuln_name="", cvss="", owasp_mobile="",
-                  masvs="", sibling_paths=None, api_profile=None,
-                  app_package="", manifest_count=0):
+                  masvs="", sibling_paths=None, api_profile=None):
     """Build the classification prompt with full vulnerability context.
 
     Args:
@@ -165,8 +151,6 @@ def _build_prompt(file_path, severity="", cwe="", description="",
         api_profile: Optional list of API/behaviour strings for this file from
                      the MobSF report (e.g. ["api_http_connection",
                      "behaviour:Connect to a URL"]).
-        app_package: The app's package name for context.
-        manifest_count: Number of manifest components to indicate app size.
     """
     api_profile_context = ""
     if api_profile:
@@ -203,8 +187,6 @@ def _build_prompt(file_path, severity="", cwe="", description="",
         masvs=masvs,
         sibling_context=sibling_context,
         api_profile_context=api_profile_context,
-        app_package=app_package or "unknown",
-        manifest_count=manifest_count,
     )
 
 
